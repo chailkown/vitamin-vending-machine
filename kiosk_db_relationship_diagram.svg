@@ -1,0 +1,221 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <pattern id="dotGrid" width="22" height="22" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.1" fill="#e6e6e6" />
+    </pattern>
+    <filter id="cardShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000000" flood-opacity="0.12" />
+    </filter>
+    <style>
+      .bg { fill: #fbfbfa; }
+      .card { fill: #ffffff; stroke: #d6d6d6; stroke-width: 1.4; filter: url(#cardShadow); }
+      .head { fill: #fafafa; stroke: #d6d6d6; stroke-width: 1.2; }
+      .row-line { stroke: #e3e3e3; stroke-width: 1; }
+      .title { font-family: Arial, sans-serif; font-size: 16px; font-weight: 700; fill: #111111; }
+      .col { font-family: Arial, sans-serif; font-size: 13px; fill: #111111; }
+      .type { font-family: Consolas, monospace; font-size: 11px; fill: #777777; }
+      .pk { fill: #222222; }
+      .fk { fill: #6f7f95; }
+      .line { stroke: #4b4b4b; stroke-width: 1.8; fill: none; }
+      .rel { stroke: #7b7b7b; stroke-width: 1.5; fill: none; }
+      .dot { fill: #111111; }
+      .label-title { font-family: Arial, sans-serif; font-size: 20px; font-weight: 800; fill: #111111; }
+      .label-body { font-family: Arial, sans-serif; font-size: 16px; fill: #111111; }
+      .small-note { font-family: Arial, sans-serif; font-size: 13px; fill: #606060; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1600" height="1000" />
+  <rect width="1600" height="1000" fill="url(#dotGrid)" opacity="0.75" />
+
+  <!-- Relationship lines -->
+  <path class="rel" d="M585 165 H655 V385 H585" />
+  <path class="rel" d="M585 205 H700 V438 H815" />
+  <path class="rel" d="M1040 395 H980 V438 H940" />
+  <path class="rel" d="M1040 490 H980 V748 H940" />
+  <path class="rel" d="M1040 748 H975 V805 H940" />
+  <path class="rel" d="M1295 805 H1225 V748 H1200" />
+
+  <!-- order_items -->
+  <g transform="translate(300 155)">
+    <rect class="card" width="285" height="305" rx="8" />
+    <rect class="head" width="285" height="38" rx="8" />
+    <text class="title" x="18" y="25">order_items</text>
+    <text class="col" x="22" y="62">◇ ◆ #</text><text class="col" x="82" y="62">id</text><text class="type" x="235" y="62">int8</text>
+    <line class="row-line" x1="0" y1="76" x2="285" y2="76" />
+    <text class="col" x="22" y="98">◆</text><text class="col" x="82" y="98">order_id</text><text class="type" x="225" y="98">uuid</text>
+    <line class="row-line" x1="0" y1="112" x2="285" y2="112" />
+    <text class="col" x="22" y="134">◆</text><text class="col" x="82" y="134">vitamin_id</text><text class="type" x="235" y="134">int8</text>
+    <line class="row-line" x1="0" y1="148" x2="285" y2="148" />
+    <text class="col" x="22" y="170">◆</text><text class="col" x="82" y="170">product_name</text><text class="type" x="235" y="170">text</text>
+    <line class="row-line" x1="0" y1="184" x2="285" y2="184" />
+    <text class="col" x="22" y="206">◆</text><text class="col" x="82" y="206">category</text><text class="type" x="235" y="206">text</text>
+    <line class="row-line" x1="0" y1="220" x2="285" y2="220" />
+    <text class="col" x="22" y="242">◆</text><text class="col" x="82" y="242">quantity</text><text class="type" x="235" y="242">int4</text>
+    <line class="row-line" x1="0" y1="256" x2="285" y2="256" />
+    <text class="col" x="22" y="278">◆</text><text class="col" x="82" y="278">unit_price</text><text class="type" x="235" y="278">int4</text>
+    <line class="row-line" x1="0" y1="292" x2="285" y2="292" />
+    <text class="col" x="22" y="314">◆</text><text class="col" x="82" y="314">line_total</text><text class="type" x="235" y="314">int4</text>
+  </g>
+
+  <!-- orders -->
+  <g transform="translate(655 50)">
+    <rect class="card" width="270" height="260" rx="8" />
+    <rect class="head" width="270" height="38" rx="8" />
+    <text class="title" x="18" y="25">orders</text>
+    <text class="col" x="22" y="62">◇ ◆</text><text class="col" x="72" y="62">id</text><text class="type" x="225" y="62">uuid</text>
+    <line class="row-line" x1="0" y1="76" x2="270" y2="76" />
+    <text class="col" x="22" y="98">◆</text><text class="col" x="72" y="98">total_amount</text><text class="type" x="225" y="98">int4</text>
+    <line class="row-line" x1="0" y1="112" x2="270" y2="112" />
+    <text class="col" x="22" y="134">◆</text><text class="col" x="72" y="134">total_qty</text><text class="type" x="225" y="134">int4</text>
+    <line class="row-line" x1="0" y1="148" x2="270" y2="148" />
+    <text class="col" x="22" y="170">◆</text><text class="col" x="72" y="170">status</text><text class="type" x="225" y="170">text</text>
+    <line class="row-line" x1="0" y1="184" x2="270" y2="184" />
+    <text class="col" x="22" y="206">◆</text><text class="col" x="72" y="206">source</text><text class="type" x="225" y="206">text</text>
+    <line class="row-line" x1="0" y1="220" x2="270" y2="220" />
+    <text class="col" x="22" y="242">◇</text><text class="col" x="72" y="242">recommendation_note</text><text class="type" x="225" y="242">text</text>
+    <line class="row-line" x1="0" y1="256" x2="270" y2="256" />
+  </g>
+
+  <!-- vitamins -->
+  <g transform="translate(655 345)">
+    <rect class="card" width="285" height="470" rx="8" />
+    <rect class="head" width="285" height="38" rx="8" />
+    <text class="title" x="18" y="25">vitamins</text>
+    <text class="col" x="22" y="62">◇ ◆ #</text><text class="col" x="82" y="62">id</text><text class="type" x="235" y="62">int8</text>
+    <line class="row-line" x1="0" y1="76" x2="285" y2="76" />
+    <text class="col" x="22" y="98">◆</text><text class="col" x="82" y="98">nutrient_id</text><text class="type" x="235" y="98">int8</text>
+    <line class="row-line" x1="0" y1="112" x2="285" y2="112" />
+    <text class="col" x="22" y="134">◆</text><text class="col" x="82" y="134">name</text><text class="type" x="235" y="134">text</text>
+    <line class="row-line" x1="0" y1="148" x2="285" y2="148" />
+    <text class="col" x="22" y="170">◆</text><text class="col" x="82" y="170">category</text><text class="type" x="235" y="170">text</text>
+    <line class="row-line" x1="0" y1="184" x2="285" y2="184" />
+    <text class="col" x="22" y="206">◆</text><text class="col" x="82" y="206">price</text><text class="type" x="235" y="206">int4</text>
+    <line class="row-line" x1="0" y1="220" x2="285" y2="220" />
+    <text class="col" x="22" y="242">◆</text><text class="col" x="82" y="242">serving_content</text><text class="type" x="235" y="242">text</text>
+    <line class="row-line" x1="0" y1="256" x2="285" y2="256" />
+    <text class="col" x="22" y="278">◆</text><text class="col" x="82" y="278">form</text><text class="type" x="235" y="278">text</text>
+    <line class="row-line" x1="0" y1="292" x2="285" y2="292" />
+    <text class="col" x="22" y="314">◆</text><text class="col" x="82" y="314">remarks</text><text class="type" x="235" y="314">text</text>
+    <line class="row-line" x1="0" y1="328" x2="285" y2="328" />
+    <text class="col" x="22" y="350">◇</text><text class="col" x="82" y="350">image_url</text><text class="type" x="235" y="350">text</text>
+    <line class="row-line" x1="0" y1="364" x2="285" y2="364" />
+    <text class="col" x="22" y="386">◆</text><text class="col" x="82" y="386">description</text><text class="type" x="235" y="386">text</text>
+    <line class="row-line" x1="0" y1="400" x2="285" y2="400" />
+    <text class="col" x="22" y="422">◆</text><text class="col" x="82" y="422">stock</text><text class="type" x="235" y="422">int4</text>
+    <line class="row-line" x1="0" y1="436" x2="285" y2="436" />
+    <text class="col" x="22" y="458">◆</text><text class="col" x="82" y="458">is_active</text><text class="type" x="235" y="458">bool</text>
+  </g>
+
+  <!-- nutrients -->
+  <g transform="translate(1040 245)">
+    <rect class="card" width="290" height="300" rx="8" />
+    <rect class="head" width="290" height="38" rx="8" />
+    <text class="title" x="18" y="25">nutrients</text>
+    <text class="col" x="22" y="62">◇ ◆ #</text><text class="col" x="82" y="62">id</text><text class="type" x="240" y="62">int8</text>
+    <line class="row-line" x1="0" y1="76" x2="290" y2="76" />
+    <text class="col" x="22" y="98">◆</text><text class="col" x="82" y="98">code</text><text class="type" x="240" y="98">text</text>
+    <line class="row-line" x1="0" y1="112" x2="290" y2="112" />
+    <text class="col" x="22" y="134">◆</text><text class="col" x="82" y="134">name</text><text class="type" x="240" y="134">text</text>
+    <line class="row-line" x1="0" y1="148" x2="290" y2="148" />
+    <text class="col" x="22" y="170">◆</text><text class="col" x="82" y="170">purpose</text><text class="type" x="240" y="170">text</text>
+    <line class="row-line" x1="0" y1="184" x2="290" y2="184" />
+    <text class="col" x="22" y="206">◆</text><text class="col" x="82" y="206">help_summary</text><text class="type" x="240" y="206">text</text>
+    <line class="row-line" x1="0" y1="220" x2="290" y2="220" />
+    <text class="col" x="22" y="242">◆</text><text class="col" x="82" y="242">precautions</text><text class="type" x="240" y="242">text</text>
+    <line class="row-line" x1="0" y1="256" x2="290" y2="256" />
+    <text class="col" x="22" y="278">◆</text><text class="col" x="82" y="278">sort_order</text><text class="type" x="240" y="278">int4</text>
+  </g>
+
+  <!-- symptom_nutrients -->
+  <g transform="translate(1040 610)">
+    <rect class="card" width="290" height="150" rx="8" />
+    <rect class="head" width="290" height="38" rx="8" />
+    <text class="title" x="18" y="25">symptom_nutrients</text>
+    <text class="col" x="22" y="62">◇ ◆</text><text class="col" x="82" y="62">symptom_id</text><text class="type" x="240" y="62">int8</text>
+    <line class="row-line" x1="0" y1="76" x2="290" y2="76" />
+    <text class="col" x="22" y="98">◇ ◆</text><text class="col" x="82" y="98">nutrient_id</text><text class="type" x="240" y="98">int8</text>
+    <line class="row-line" x1="0" y1="112" x2="290" y2="112" />
+    <text class="col" x="22" y="134">◆</text><text class="col" x="82" y="134">sort_order</text><text class="type" x="240" y="134">int4</text>
+  </g>
+
+  <!-- symptoms -->
+  <g transform="translate(1040 805)">
+    <rect class="card" width="290" height="190" rx="8" />
+    <rect class="head" width="290" height="38" rx="8" />
+    <text class="title" x="18" y="25">symptoms</text>
+    <text class="col" x="22" y="62">◇ ◆ #</text><text class="col" x="82" y="62">id</text><text class="type" x="240" y="62">int8</text>
+    <line class="row-line" x1="0" y1="76" x2="290" y2="76" />
+    <text class="col" x="22" y="98">◆</text><text class="col" x="82" y="98">code</text><text class="type" x="240" y="98">text</text>
+    <line class="row-line" x1="0" y1="112" x2="290" y2="112" />
+    <text class="col" x="22" y="134">◆</text><text class="col" x="82" y="134">category_id</text><text class="type" x="240" y="134">int8</text>
+    <line class="row-line" x1="0" y1="148" x2="290" y2="148" />
+    <text class="col" x="22" y="170">◆</text><text class="col" x="82" y="170">label</text><text class="type" x="240" y="170">text</text>
+  </g>
+
+  <!-- symptom_categories -->
+  <g transform="translate(1295 805)">
+    <rect class="card" width="280" height="190" rx="8" />
+    <rect class="head" width="280" height="38" rx="8" />
+    <text class="title" x="18" y="25">symptom_categories</text>
+    <text class="col" x="22" y="62">◇ ◆ #</text><text class="col" x="82" y="62">id</text><text class="type" x="230" y="62">int8</text>
+    <line class="row-line" x1="0" y1="76" x2="280" y2="76" />
+    <text class="col" x="22" y="98">◆</text><text class="col" x="82" y="98">code</text><text class="type" x="230" y="98">text</text>
+    <line class="row-line" x1="0" y1="112" x2="280" y2="112" />
+    <text class="col" x="22" y="134">◆</text><text class="col" x="82" y="134">title</text><text class="type" x="230" y="134">text</text>
+    <line class="row-line" x1="0" y1="148" x2="280" y2="148" />
+    <text class="col" x="22" y="170">◆</text><text class="col" x="82" y="170">emoji</text><text class="type" x="230" y="170">text</text>
+  </g>
+
+  <!-- Explanation callouts -->
+  <g>
+    <circle class="dot" cx="292" cy="230" r="4" />
+    <line class="line" x1="292" y1="230" x2="215" y2="230" />
+    <text class="label-title" x="38" y="222">order_items 테이블</text>
+    <text class="label-body" x="38" y="252">주문에 포함된 상품 목록을</text>
+    <text class="label-body" x="38" y="279">저장하는 테이블</text>
+
+    <circle class="dot" cx="655" cy="390" r="4" />
+    <line class="line" x1="655" y1="390" x2="540" y2="390" />
+    <text class="label-title" x="335" y="395">vitamins 테이블</text>
+    <text class="label-body" x="335" y="428">자판기에서 판매하는</text>
+    <text class="label-body" x="335" y="455">제품 정보와 재고를 저장</text>
+
+    <circle class="dot" cx="925" cy="105" r="4" />
+    <line class="line" x1="925" y1="105" x2="1045" y2="105" />
+    <text class="label-title" x="1065" y="112">orders 테이블</text>
+    <text class="label-body" x="1065" y="145">주문 한 건의 전체 정보를</text>
+    <text class="label-body" x="1065" y="172">저장하는 테이블</text>
+
+    <circle class="dot" cx="1330" cy="320" r="4" />
+    <line class="line" x1="1330" y1="320" x2="1450" y2="320" />
+    <text class="label-title" x="1465" y="327">nutrients 테이블</text>
+    <text class="label-body" x="1465" y="360">영양소 master 정보를</text>
+    <text class="label-body" x="1465" y="387">저장하는 테이블</text>
+
+    <circle class="dot" cx="1330" cy="670" r="4" />
+    <line class="line" x1="1330" y1="670" x2="1450" y2="670" />
+    <text class="label-title" x="1465" y="677">symptom_nutrients 테이블</text>
+    <text class="label-body" x="1465" y="710">특정 증상에 대해 추천할</text>
+    <text class="label-body" x="1465" y="737">영양소를 연결하는 핵심 테이블</text>
+
+    <circle class="dot" cx="1330" cy="870" r="4" />
+    <line class="line" x1="1330" y1="870" x2="1450" y2="870" />
+    <text class="label-title" x="1465" y="877">symptoms 테이블</text>
+    <text class="label-body" x="1465" y="910">사용자가 선택하는</text>
+    <text class="label-body" x="1465" y="937">세부 증상 정보를 저장</text>
+
+    <circle class="dot" cx="1295" cy="950" r="4" />
+    <line class="line" x1="1295" y1="950" x2="1220" y2="950" />
+    <text class="label-title" x="935" y="920">symptom_categories 테이블</text>
+    <text class="label-body" x="935" y="953">증상의 큰 분류를 저장하는 테이블</text>
+  </g>
+
+  <!-- Relationship notes -->
+  <text class="small-note" x="615" y="335">orders.id → order_items.order_id</text>
+  <text class="small-note" x="450" y="520">vitamins.id → order_items.vitamin_id</text>
+  <text class="small-note" x="895" y="372">nutrients.id → vitamins.nutrient_id</text>
+  <text class="small-note" x="1000" y="585">nutrients.id → symptom_nutrients.nutrient_id</text>
+  <text class="small-note" x="1000" y="790">symptoms.id → symptom_nutrients.symptom_id</text>
+  <text class="small-note" x="1195" y="790">symptom_categories.id → symptoms.category_id</text>
+</svg>

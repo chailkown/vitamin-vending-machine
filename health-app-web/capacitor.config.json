@@ -1,0 +1,9 @@
+{
+  "appId": "com.capstone.healthapp",
+  "appName": "건강정보앱",
+  "webDir": "dist",
+  "server": {
+    "hostname": "localhost",
+    "androidScheme": "https"
+  }
+}

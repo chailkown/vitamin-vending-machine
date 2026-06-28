@@ -1,0 +1,16 @@
+﻿**/node_modules/
+**/.env
+**/.env.*
+!**/.env.example
+**/build/
+**/dist/
+**/.npm-cache/
+**/.gradle/
+**/.idea/
+**/android/build/
+**/android/app/build/
+**/android/app/src/main/assets/public/
+**/android/local.properties
+*.log
+.DS_Store
+Thumbs.db
