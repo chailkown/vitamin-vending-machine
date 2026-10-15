@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from '../config/supabase';
 import { SAMPLE_VITAMINS } from '../data/sampleVitamins';
+import { NUTRIENTS } from '../data/algorithmData';
 
 const CATEGORY_BRIEF_DESCRIPTION = {
   '비타민 B-Complex': '에너지 대사 및 신경 기능 지원',
@@ -62,6 +63,7 @@ const normalizeVitamin = (vitamin) => {
   const price = Math.max(1, Number(vitamin?.price) || 0);
   const nutrient = vitamin?.nutrients;
   const category = vitamin?.category || nutrient?.name || '';
+  const reviewed = NUTRIENTS.find((n) => n.name === category);
   return {
     ...vitamin,
     name: normalizeProductName(vitamin?.name),
@@ -69,28 +71,28 @@ const normalizeVitamin = (vitamin) => {
     price,
     category,
     nutrient_code: nutrient?.code || null,
-    nutrient_purpose: nutrient?.purpose || null,
-    nutrient_precautions: nutrient?.precautions || null,
+    nutrient_purpose: reviewed?.purpose || nutrient?.purpose || null,
+    nutrient_precautions: reviewed?.precautions || nutrient?.precautions || null,
     description:
-      vitamin?.description && String(vitamin.description).trim().length > 0
+      reviewed?.purpose || (vitamin?.description && String(vitamin.description).trim().length > 0
         ? vitamin.description
-        : nutrient?.purpose || CATEGORY_BRIEF_DESCRIPTION[category] || '기초 건강 관리에 도움',
+        : nutrient?.purpose || CATEGORY_BRIEF_DESCRIPTION[category] || '제품 원료·함량을 확인해주세요.'),
   };
 };
 
-const normalizeVitaminList = (items = []) => items.map(normalizeVitamin);
+const normalizeVitaminList = (items = []) => (items || []).filter(isProductEnabled).map(normalizeVitamin);
 
-const useSample = (reason) => {
+const useSample = (reason, items = SAMPLE_VITAMINS) => {
   lastDataSource = 'sample';
   lastFetchError = reason || null;
   if (!allowSampleFallback) {
     return [];
   }
-  return normalizeVitaminList(SAMPLE_VITAMINS);
+  return normalizeVitaminList(items);
 };
 
 const VITAMIN_COLUMNS =
-  'id, nutrient_id, name, category, price, serving_content, form, remarks, image_url, description, stock, is_active, nutrients ( code, name, purpose, precautions )';
+  'id, nutrient_id, name, category, price, serving_content, form, remarks, image_url, description, stock, is_active, allergen_verified, allergen_codes, allergen_source_url, allergen_checked_at, nutrients ( code, name, purpose, precautions )';
 
 /**
  * Supabase 연결 및 vitamins 테이블 조회 테스트
@@ -135,9 +137,7 @@ export const getAllVitamins = async () => {
       return useSample(error.message);
     }
 
-    if (!data || data.length === 0) {
-      return useSample('DB에 활성 상품이 없습니다. supabase/seed.sql 을 실행하세요.');
-    }
+    // An empty successful response is authoritative; never resurrect disabled DB products.
 
     lastDataSource = 'supabase';
     lastFetchError = null;
@@ -151,8 +151,9 @@ export const getAllVitamins = async () => {
 export const getVitaminById = async (id) => {
   try {
     if (!isSupabaseConfigured || !supabase) {
+      if (!allowSampleFallback) return null;
       const sample = SAMPLE_VITAMINS.find((v) => v.id === id);
-      return sample ? normalizeVitamin(sample) : null;
+      return sample && isProductEnabled(sample) ? normalizeVitamin(sample) : null;
     }
 
     const { data, error } = await supabase
@@ -162,14 +163,15 @@ export const getVitaminById = async (id) => {
       .eq('is_active', true)
       .single();
 
-    if (error) throw error;
+    if (error || !data) return null;
 
     lastDataSource = 'supabase';
     lastFetchError = null;
-    return normalizeVitamin(data);
+    return isProductEnabled(data) ? normalizeVitamin(data) : null;
   } catch {
+    if (!allowSampleFallback) return null;
     const sample = SAMPLE_VITAMINS.find((v) => v.id === id);
-    return sample ? normalizeVitamin(sample) : null;
+    return sample && isProductEnabled(sample) ? normalizeVitamin(sample) : null;
   }
 };
 
@@ -178,10 +180,10 @@ export const getVitaminsByCategory = async (category) => {
   try {
     const { data, error } = await fetchActiveVitamins((q) => q.eq('category', category));
 
-    if (error || !data || data.length === 0) {
+    if (error) {
       const filtered = SAMPLE_VITAMINS.filter((v) => v.category === category);
       if (filtered.length > 0) {
-        return useSample(error?.message || '카테고리 결과 없음');
+        return useSample(error?.message || '카테고리 결과 없음', filtered);
       }
       return [];
     }
@@ -190,7 +192,7 @@ export const getVitaminsByCategory = async (category) => {
     lastFetchError = null;
     return normalizeVitaminList(data);
   } catch (error) {
-    return normalizeVitaminList(SAMPLE_VITAMINS.filter((v) => v.category === category));
+    return useSample(error?.message || '카테고리 조회 실패', SAMPLE_VITAMINS.filter((v) => v.category === category));
   }
 };
 
@@ -201,6 +203,7 @@ export const searchVitamins = async (searchTerm) => {
 
   try {
     if (!isSupabaseConfigured || !supabase) {
+      if (!allowSampleFallback) return [];
       return normalizeVitaminList(
         SAMPLE_VITAMINS.filter(
           (v) =>
@@ -220,6 +223,7 @@ export const searchVitamins = async (searchTerm) => {
     lastFetchError = null;
     return normalizeVitaminList(data || []);
   } catch {
+    if (!allowSampleFallback) return [];
     return normalizeVitaminList(
       SAMPLE_VITAMINS.filter(
         (v) =>
@@ -263,3 +267,4 @@ export const deleteVitamin = async (id) => {
     return false;
   }
 };
+import { isProductEnabled } from '../data/productPolicy';

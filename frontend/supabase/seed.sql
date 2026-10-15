@@ -161,7 +161,10 @@ on conflict (id) do update set
   nutrient_id = excluded.nutrient_id, name = excluded.name, category = excluded.category,
   price = excluded.price, serving_content = excluded.serving_content, form = excluded.form,
   remarks = excluded.remarks, image_url = excluded.image_url, description = excluded.description,
-  stock = excluded.stock, is_active = true, updated_at = now();
+  stock = excluded.stock, is_active = excluded.category not in ('밀크시슬','비타민 E'), updated_at = now();
+
+-- Initial-install assortment: keep all nutrient/product records; disable four products.
+update public.vitamins set is_active=false where category in ('밀크시슬','비타민 E');
 
 select setval(pg_get_serial_sequence('public.nutrients', 'id'), (select coalesce(max(id), 1) from public.nutrients));
 select setval(pg_get_serial_sequence('public.symptom_categories', 'id'), (select coalesce(max(id), 1) from public.symptom_categories));

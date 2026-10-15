@@ -79,22 +79,24 @@ export const saveHealthProfile = async ({ userId, profile, kioskPayload }) => {
     body: JSON.stringify([body]),
   });
 
-  await request('app_qr_payloads', {
-    method: 'POST',
-    body: JSON.stringify([{
-      user_id: userId,
-      payload_hash: btoa(unescape(encodeURIComponent(JSON.stringify(kioskPayload)))).slice(0, 120),
-      payload: kioskPayload,
-      expires_at: new Date(Date.now() + 30 * 1000).toISOString(),
-    }]),
-  });
-
+  // QR expiration belongs to the newly generated QR itself, not the profile save time.
   return profileRows?.[0] || null;
 };
 
 export const getVendingMachines = async () => {
   const data = await request('app_vending_machines?select=*&order=created_at.asc');
   return data || [];
+};
+
+// Demo credential-checked RPC; user_id filtering alone is not an authorization boundary.
+// app_users remains a demo plaintext-password table until Supabase Auth is introduced.
+export const getPurchaseHistory = async (userId, password) => {
+  if (!userId || !password) throw new Error('구매 내역을 확인하려면 다시 로그인해주세요.');
+  const rows = await request('rpc/get_app_purchase_history', {
+    method: 'POST', body: JSON.stringify({ p_user_id: userId, p_password: password }),
+  });
+  if (!Array.isArray(rows)) throw new Error('구매 내역 응답을 확인할 수 없습니다.');
+  return rows.filter((order) => order.user_id === userId && order.status === 'completed');
 };
 
 export const saveVendingMachine = async (machine) => {

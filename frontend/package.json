@@ -15,7 +15,7 @@
     "test": "react-scripts test",
     "eject": "react-scripts eject",
     "db:test": "node scripts/test-db.mjs",
-    "db:test-order": "node scripts/test-order.mjs"
+    "db:test-order": "node scripts/test-order-local.mjs"
   },
   "browserslist": {
     "production": [

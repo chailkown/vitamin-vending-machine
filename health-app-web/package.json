@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "test:integration": "node --test tests/integration.mjs",
     "dev": "vite --port 3001",
     "build": "vite build",
     "lint": "eslint .",
@@ -13,6 +14,7 @@
     "android:open": "npx cap open android"
   },
   "dependencies": {
+    "qrcode": "1.5.4",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
   },
@@ -20,6 +22,7 @@
     "@capacitor/android": "^8.4.0",
     "@capacitor/cli": "^8.4.0",
     "@capacitor/core": "^8.4.0",
+    "@electric-sql/pglite": "0.3.14",
     "@eslint/js": "^9.39.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -28,6 +31,8 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
+    "jsqr": "1.4.0",
+    "pngjs": "7.0.0",
     "vite": "^8.0.9"
   }
 }

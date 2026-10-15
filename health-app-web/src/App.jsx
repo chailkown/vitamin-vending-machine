@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import './App.css';
-import { createVersion6QrMatrix } from './qrVersion6';
+import { createQrDataUrl } from './services/qrImage';
+import { toKioskProfile } from './services/qrProfile';
+import healthCatalog from './services/healthCatalog.json';
+import { getProfileStorageKey, loadUserProfile, saveUserProfile } from './services/profileStorage';
 import {
   createAppUser,
   deleteVendingMachine,
   findAppAdmin,
   findAppUser,
   getHealthProfile,
+  getPurchaseHistory,
   getVendingMachines,
   isHealthDbConfigured,
   mapDbMachineToAppMachine,
@@ -15,7 +19,6 @@ import {
   saveVendingMachine,
 } from './services/healthDb';
 
-const STORAGE_KEY = 'health-app-profile-v1';
 const USERS_KEY = 'health-app-users-v1';
 const SESSION_KEY = 'health-app-session-v1';
 const KIOSK_PROFILE_KEY = 'health-app-kiosk-profile-v1';
@@ -74,36 +77,10 @@ const DEFAULT_PROFILE = {
   medications: '해당 없음',
 };
 
-const DISEASES = ['간질환', '당뇨', '빈혈', '고혈압', '지방간', '고중성지방혈증', '위장질환'];
+const DISEASES = Object.keys(healthCatalog.conditions).filter((name) => name !== '해당 없음');
 const REQUIRED_FIELDS = ['name', 'age', 'height', 'weight', 'gender', 'smoking', 'alcohol', 'allergies', 'medications'];
-const ALLERGY_OPTIONS = ['해당 없음', '견과류', '유제품', '갑각류', '복숭아', '꽃가루', '직접 입력'];
-const MEDICATION_OPTIONS = ['해당 없음', '혈압약', '당뇨약', '항응고제', '위장약', '진통제', '직접 입력'];
-const CONDITION_CODES = {
-  '해당 없음': 0,
-  간질환: 1,
-  당뇨: 2,
-  빈혈: 3,
-  고혈압: 4,
-  지방간: 5,
-  고중성지방혈증: 6,
-  위장질환: 7,
-};
-const ALLERGY_CODES = {
-  '해당 없음': 0,
-  견과류: 1,
-  유제품: 2,
-  갑각류: 3,
-  복숭아: 4,
-  꽃가루: 5,
-};
-const MEDICATION_CODES = {
-  '해당 없음': 0,
-  혈압약: 1,
-  당뇨약: 2,
-  항응고제: 3,
-  위장약: 4,
-  진통제: 5,
-};
+const ALLERGY_OPTIONS = [...Object.keys(healthCatalog.allergies), '직접 입력'];
+const MEDICATION_OPTIONS = [...Object.keys(healthCatalog.medications), '직접 입력'];
 
 const CHOICE_SCREEN_CONFIG = {
   allergy: {
@@ -132,18 +109,6 @@ const loadJson = (key, fallback) => {
 };
 
 const toNumberText = (value) => String(value ?? '').replace(/\D/g, '');
-const toList = (value) => {
-  if (Array.isArray(value)) return value.length ? value : ['해당 없음'];
-  return String(value || '해당 없음')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-};
-
-const toFirstCode = (value, codeMap) => {
-  const first = toList(value)[0] || '해당 없음';
-  return codeMap[first] ?? 99;
-};
 
 const loadKakaoMapSdk = () => new Promise((resolve, reject) => {
   if (!KAKAO_MAP_KEY) {
@@ -190,28 +155,11 @@ const loadKakaoMapSdk = () => new Promise((resolve, reject) => {
   document.head.appendChild(script);
 });
 
-const toKioskProfile = (profile, userId) => ({
-  id: userId || 'local',
-  n: profile.name,
-  a: Number(profile.age),
-  g: profile.gender === '남성' ? 'M' : 'F',
-  h: Number(profile.height),
-  w: Number(profile.weight),
-  s: profile.smoking === '흡연 중' ? 1 : 0,
-  al: {
-    '안 함': 0,
-    '월 1~2회': 1,
-    '주 1~2회': 2,
-    '주 3회 이상': 3,
-  }[profile.alcohol] ?? 2,
-  c: toFirstCode(profile.conditions, CONDITION_CODES),
-  ag: toFirstCode(profile.allergies, ALLERGY_CODES),
-  m: toFirstCode(profile.medications, MEDICATION_CODES),
-});
 
 const validateHealthInfo = (profile) => {
   const missing = REQUIRED_FIELDS.some((key) => !String(profile[key] ?? '').trim());
   if (missing) return '건강정보를 모두 입력해야 이용할 수 있습니다.';
+  if (profile.name.length > 100) return '이름은 100자 이내로 입력해주세요.';
 
   const age = Number(profile.age);
   const height = Number(profile.height);
@@ -224,6 +172,12 @@ const validateHealthInfo = (profile) => {
 };
 
 function App() {
+  const sessionEpoch = useRef(0);
+  const saveTimer = useRef(null);
+  const authPending = useRef(false);
+  const savePending = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
+  useEffect(() => () => { sessionEpoch.current += 1; clearTimeout(saveTimer.current); }, []);
   const [users, setUsers] = useState(() => loadJson(USERS_KEY, []));
   const [session, setSession] = useState(() => loadJson(SESSION_KEY, null));
   const [authMode, setAuthMode] = useState('login');
@@ -232,29 +186,35 @@ function App() {
   const [screen, setScreen] = useState(() => {
     const currentSession = loadJson(SESSION_KEY, null);
     if (!currentSession) return 'auth';
-    return currentSession.isAdmin ? 'admin' : 'home';
+    return currentSession.isAdmin ? 'admin' : validateHealthInfo(loadUserProfile(localStorage, currentSession.userId, DEFAULT_PROFILE)) ? 'health' : 'home';
   });
   const [profile, setProfile] = useState(() => {
-    const savedProfile = loadJson(STORAGE_KEY, null);
-    return savedProfile ? { ...DEFAULT_PROFILE, ...savedProfile } : DEFAULT_PROFILE;
+    const currentSession = loadJson(SESSION_KEY, null);
+    return loadUserProfile(localStorage, currentSession?.userId, DEFAULT_PROFILE);
   });
   const [savedNotice, setSavedNotice] = useState('');
   const [healthError, setHealthError] = useState('');
-  const [qrCountdown, setQrCountdown] = useState(30);
+  const [qrRefresh, setQrRefresh] = useState(0);
+  const [qrImage, setQrImage] = useState('');
+  const [qrError, setQrError] = useState('');
+  const [purchaseHistory, setPurchaseHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const [historyRefresh, setHistoryRefresh] = useState(0);
   const [mapStatus, setMapStatus] = useState('');
   const [vendingMachines, setVendingMachines] = useState(() => loadJson(VENDING_MACHINES_KEY, DEFAULT_VENDING_MACHINES));
   const [machineForm, setMachineForm] = useState(EMPTY_MACHINE_FORM);
   const [machineNotice, setMachineNotice] = useState('');
   const [machineError, setMachineError] = useState('');
   const [allergyMode, setAllergyMode] = useState(() =>
-    ALLERGY_OPTIONS.includes(loadJson(STORAGE_KEY, DEFAULT_PROFILE).allergies) ? loadJson(STORAGE_KEY, DEFAULT_PROFILE).allergies : '직접 입력'
+    ALLERGY_OPTIONS.includes(profile.allergies) ? profile.allergies : '직접 입력'
   );
   const [medicationMode, setMedicationMode] = useState(() =>
-    MEDICATION_OPTIONS.includes(loadJson(STORAGE_KEY, DEFAULT_PROFILE).medications) ? loadJson(STORAGE_KEY, DEFAULT_PROFILE).medications : '직접 입력'
+    MEDICATION_OPTIONS.includes(profile.medications) ? profile.medications : '직접 입력'
   );
   const [needsHealthSetup, setNeedsHealthSetup] = useState(() => {
     const currentSession = loadJson(SESSION_KEY, null);
-    return Boolean(currentSession?.needsHealthSetup);
+    return Boolean(currentSession && !currentSession.isAdmin && validateHealthInfo(loadUserProfile(localStorage, currentSession.userId, DEFAULT_PROFILE)));
   });
 
   useEffect(() => {
@@ -268,12 +228,6 @@ function App() {
       localStorage.removeItem(SESSION_KEY);
     }
   }, [session]);
-
-  useEffect(() => {
-    if (session?.userId) {
-      localStorage.setItem(`${STORAGE_KEY}-${session.userId}`, JSON.stringify(profile));
-    }
-  }, [profile, session?.userId]);
 
   useEffect(() => {
     localStorage.setItem(VENDING_MACHINES_KEY, JSON.stringify(vendingMachines));
@@ -293,7 +247,9 @@ function App() {
     return profile.conditions.join(', ');
   }, [profile.conditions]);
 
-  const activeScreen = session?.isAdmin
+  const setupScreens = ['health', 'disease', 'allergy', 'medication'];
+  const activeScreen = !session ? 'auth' : needsHealthSetup && !session.isAdmin && !setupScreens.includes(screen)
+    ? 'health' : session?.isAdmin
     ? 'admin'
     : screen === 'admin'
       ? (session ? 'home' : 'auth')
@@ -309,23 +265,35 @@ function App() {
     [kioskProfile]
   );
 
-  const qrMatrix = useMemo(
-    () => createVersion6QrMatrix(qrPayload),
-    [qrPayload]
-  );
-
   useEffect(() => {
-    if (activeScreen !== 'qr') return undefined;
-    const timer = setInterval(() => {
-      setQrCountdown((prev) => {
-        if (prev <= 1) {
-          return 30;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [activeScreen]);
+    if (activeScreen !== 'qr') return;
+    let cancelled = false;
+    createQrDataUrl(qrPayload).then((url) => {
+      if (!cancelled) { setQrImage(url); setQrError(''); }
+    }).catch((error) => {
+      if (!cancelled) { setQrImage(''); setQrError(error.message); }
+    });
+    return () => { cancelled = true; };
+  }, [activeScreen, qrPayload, qrRefresh]);
+
+  const historyPassword = users.find((user) => user.userId === session?.userId)?.password;
+  useEffect(() => {
+    if (activeScreen !== 'history' || !session?.userId) return;
+    let cancelled = false;
+    getPurchaseHistory(session.userId, historyPassword).then((rows) => {
+      if (!cancelled) { setPurchaseHistory(rows); setHistoryError(''); }
+    }).catch((error) => {
+      if (!cancelled) { setPurchaseHistory([]); setHistoryError(error.message); }
+    }).finally(() => { if (!cancelled) setHistoryLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeScreen, session?.userId, historyPassword, historyRefresh]);
+
+  const openHistory = () => {
+    setPurchaseHistory([]); setHistoryError(''); setHistoryLoading(true); setScreen('history');
+  };
+  const openQr = () => {
+    setQrImage(''); setQrError(''); setScreen('qr');
+  };
 
   useEffect(() => {
     if (activeScreen !== 'map') return undefined;
@@ -436,9 +404,10 @@ function App() {
     setProfile((prev) => ({ ...prev, [key]: value }));
   };
 
-  const getProfileKey = (userId) => `${STORAGE_KEY}-${userId}`;
+  const getProfileKey = getProfileStorageKey;
 
   const startAdminSession = (user) => {
+    sessionEpoch.current += 1;
     setSession({ userId: user.userId, name: user.name, isAdmin: true });
     setNeedsHealthSetup(false);
     setMachineNotice('');
@@ -446,6 +415,7 @@ function App() {
   };
 
   const startSession = async (user, forceHealthSetup = false) => {
+    const epoch = ++sessionEpoch.current;
     let userProfile = loadJson(getProfileKey(user.userId), null);
     let nextProfile = userProfile ? { ...DEFAULT_PROFILE, ...userProfile } : { ...DEFAULT_PROFILE, name: user.name };
     let needsSetup = forceHealthSetup || !userProfile;
@@ -456,7 +426,7 @@ function App() {
         if (dbProfile) {
           nextProfile = mapDbProfileToAppProfile(dbProfile, { ...DEFAULT_PROFILE, name: user.name });
           userProfile = nextProfile;
-          needsSetup = false;
+          needsSetup = Boolean(validateHealthInfo(nextProfile));
           localStorage.setItem(getProfileKey(user.userId), JSON.stringify(nextProfile));
         } else if (!forceHealthSetup) {
           needsSetup = true;
@@ -466,6 +436,8 @@ function App() {
       }
     }
 
+    if (epoch !== sessionEpoch.current) return;
+    needsSetup = needsSetup || Boolean(validateHealthInfo(nextProfile));
     setProfile(nextProfile);
     setAllergyMode(ALLERGY_OPTIONS.includes(nextProfile.allergies) ? nextProfile.allergies : '직접 입력');
     setMedicationMode(MEDICATION_OPTIONS.includes(nextProfile.medications) ? nextProfile.medications : '직접 입력');
@@ -476,6 +448,9 @@ function App() {
 
   const handleAuthSubmit = async (event) => {
     event.preventDefault();
+    if (authPending.current) return;
+    authPending.current = true;
+    try {
     setAuthError('');
 
     const userId = authForm.userId.trim();
@@ -486,6 +461,7 @@ function App() {
       setAuthError('필수 항목을 입력해주세요.');
       return;
     }
+    if (userId.length > 100 || name.length > 100) { setAuthError('이름과 아이디는 100자 이내로 입력해주세요.'); return; }
 
     if (authMode === 'signup') {
       try {
@@ -520,7 +496,7 @@ function App() {
         const dbUser = await findAppUser(userId);
         if (dbUser && dbUser.password === password) {
           found = { userId: dbUser.user_id, password: dbUser.password, name: dbUser.name };
-          setUsers((prev) => (prev.some((user) => user.userId === found.userId) ? prev : [...prev, found]));
+          setUsers((prev) => [...prev.filter((user) => user.userId !== found.userId), found]);
           isAdminLogin = Boolean(await findAppAdmin(userId));
         }
       } catch {
@@ -537,10 +513,22 @@ function App() {
       return;
     }
     await startSession(found, false);
+    } finally { authPending.current = false; }
   };
 
   const logout = () => {
+    sessionEpoch.current += 1;
+    clearTimeout(saveTimer.current);
+    savePending.current = false;
+    setIsSaving(false);
     setSession(null);
+    setProfile({ ...DEFAULT_PROFILE });
+    setPurchaseHistory([]);
+    setHistoryError('');
+    setQrImage('');
+    setQrError('');
+    setSavedNotice('');
+    setHealthError('');
     setNeedsHealthSetup(false);
     setAuthMode('login');
     setAuthForm((prev) => ({ ...prev, password: '' }));
@@ -565,23 +553,26 @@ function App() {
     if (type === 'medication') setMedicationMode(value);
 
     if (value === '직접 입력') {
-      const currentValue = profile[config.field];
-      const isPreset = config.options.includes(currentValue);
-      updateProfile(config.field, isPreset ? '' : currentValue);
       return;
     }
-
-    updateProfile(config.field, value);
+    const selected = String(profile[config.field] || '').split(',').map((item) => item.trim()).filter((item) => item && item !== '해당 없음');
+    const next = value === '해당 없음' ? [] : selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value];
+    updateProfile(config.field, next.length ? next.join(', ') : '해당 없음');
   };
 
   const saveHealthInfo = async () => {
+    if (savePending.current || !session) return;
     const validationMessage = validateHealthInfo(profile);
     if (validationMessage) {
       setHealthError(validationMessage);
       return;
     }
     setHealthError('');
-    localStorage.setItem(getProfileKey(session.userId), JSON.stringify(profile));
+    const epoch = sessionEpoch.current;
+    savePending.current = true;
+    setIsSaving(true);
+    try {
+    saveUserProfile(localStorage, session.userId, profile);
     localStorage.setItem(`${KIOSK_PROFILE_KEY}-${session.userId}`, JSON.stringify(toKioskProfile(profile, session.userId)));
     if (isHealthDbConfigured) {
       try {
@@ -591,17 +582,26 @@ function App() {
           kioskPayload: toKioskProfile(profile, session.userId),
         });
       } catch {
-        // DB 저장이 실패해도 로컬 저장은 완료된 상태입니다.
+        if (epoch !== sessionEpoch.current) return;
+        setSavedNotice('이 기기에 저장했습니다. 클라우드 저장에 실패해 다른 기기에서는 보이지 않을 수 있습니다.');
+        setHealthError('클라우드 연결을 확인하고 다시 저장해주세요.');
+        return;
       }
     }
+    if (epoch !== sessionEpoch.current) return;
     const nextSession = { ...session, name: profile.name, needsHealthSetup: false };
     setSession(nextSession);
     setNeedsHealthSetup(false);
     setSavedNotice('저장되었습니다');
-    setTimeout(() => {
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      if (epoch !== sessionEpoch.current) return;
       setSavedNotice('');
       setScreen('home');
     }, 800);
+    } finally {
+      if (epoch === sessionEpoch.current) { savePending.current = false; setIsSaving(false); }
+    }
   };
 
   const editMachine = (machine) => {
@@ -750,12 +750,9 @@ function App() {
         {activeScreen === 'home' && (
           <>
             <header className="top-bar home-top">
-              <button className="name-button" type="button" onClick={() => setScreen('profile')}>
+              <span className="home-name">
                 {profile.name} 님
-              </button>
-              <button className="logout-top-btn" type="button" onClick={logout}>
-                로그아웃
-              </button>
+              </span>
             </header>
 
             <section className="card-list">
@@ -767,10 +764,7 @@ function App() {
                 <span className="home-emoji" aria-hidden="true">🗺️</span>
               </button>
 
-              <button className="home-card" type="button" onClick={() => {
-                setQrCountdown(30);
-                setScreen('qr');
-              }}>
+              <button className="home-card" type="button" onClick={openQr}>
                 <div>
                   <strong>스캔</strong>
                   <p>개인 건강 정보 QR만들기</p>
@@ -924,8 +918,8 @@ function App() {
               <LinkedRow label="알러지" value={profile.allergies || '직접 입력'} onClick={() => setScreen('allergy')} />
               <LinkedRow label="복용약물" value={profile.medications || '직접 입력'} onClick={() => setScreen('medication')} />
 
-              <button className="primary-btn" type="button" onClick={saveHealthInfo}>
-                저장하기
+              <button className="primary-btn" type="button" onClick={saveHealthInfo} disabled={isSaving}>
+                {isSaving ? '저장 중...' : '저장하기'}
               </button>
               {healthError && <p className="form-error">{healthError}</p>}
               {savedNotice && <p className="save-notice">{savedNotice}</p>}
@@ -981,16 +975,38 @@ function App() {
                 className="qr-refresh"
                 type="button"
                 onClick={() => {
-                  setQrCountdown(30);
+                  setQrImage(''); setQrError(''); setQrRefresh((value) => value + 1);
                 }}
                 aria-label="QR 새로고침"
               >
                 <span aria-hidden="true">↻</span>
               </button>
-              <p>{qrCountdown}초 남았습니다</p>
+              <p>시간 제한 없이 재사용할 수 있습니다. 건강정보를 수정하면 QR에 반영됩니다.</p>
               <div className="qr-image-wrap">
-                <QrCodeMatrix matrix={qrMatrix} />
+                {qrError ? <p role="alert">{qrError}</p>
+                  : qrImage ? <img className="qr-image" src={qrImage} alt="키오스크 전달용 건강정보 QR코드" /> : <p>QR 생성 중...</p>}
               </div>
+            </section>
+          </>
+        )}
+
+        {activeScreen === 'history' && (
+          <>
+            <Header title="내 구매 내역" eyebrow="구매 기록" onBack={() => setScreen('home')} />
+            <section className="history-panel">
+              <button className="primary-btn" type="button" disabled={historyLoading} onClick={() => {
+                setPurchaseHistory([]); setHistoryError(''); setHistoryLoading(true); setHistoryRefresh((value) => value + 1);
+              }}>새로고침</button>
+              {historyLoading ? <p role="status">구매 기록을 불러오는 중...</p>
+                : historyError ? <p className="form-error" role="alert">{historyError}</p>
+                  : purchaseHistory.length === 0 ? <p>완료된 구매 내역이 없습니다.</p>
+                    : purchaseHistory.map((order) => (
+                      <article className="history-order" key={order.id}>
+                        <time>{new Date(order.completed_at || order.created_at).toLocaleString('ko-KR')}</time>
+                        {(order.order_items || []).map((item) => <p key={item.id}>{item.product_name} × {item.quantity} 파우치 · {item.line_total.toLocaleString()}원</p>)}
+                        <strong>총 {order.total_amount.toLocaleString()}원 · {order.is_simulated ? '시연 완료' : '구매 완료'}</strong>
+                      </article>
+                    ))}
             </section>
           </>
         )}
@@ -1010,13 +1026,6 @@ function App() {
                 <div><dt>알러지</dt><dd>{profile.allergies}</dd></div>
                 <div><dt>복용약물</dt><dd>{profile.medications}</dd></div>
               </dl>
-              <section className="kiosk-data-preview">
-                <strong>키오스크 추천 데이터</strong>
-                <code>{JSON.stringify(kioskProfile, null, 2)}</code>
-              </section>
-              <button className="primary-btn" type="button" onClick={() => setScreen('health')}>
-                건강 정보 수정
-              </button>
               <button className="logout-btn" type="button" onClick={logout}>
                 로그아웃
               </button>
@@ -1024,11 +1033,14 @@ function App() {
           </>
         )}
 
-        {activeScreen !== 'auth' && !session?.isAdmin && (
+        {activeScreen !== 'auth' && !session?.isAdmin && !needsHealthSetup && (
         <footer className="bottom-nav">
-          <button type="button" onClick={() => setScreen('home')} aria-label="메뉴">
-            <span className="nav-menu" />
-            <small>메뉴</small>
+          <button type="button" onClick={openHistory} aria-label="구매내역">
+            <svg className="nav-history" viewBox="0 0 40 44" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M8 3h24v38l-6-4-6 4-6-4-6 4V3Z" />
+              <path d="M14 13h12M14 21h12M14 29h8" />
+            </svg>
+            <small>구매내역</small>
           </button>
           <button type="button" onClick={() => setScreen('home')} aria-label="홈">
             <span className="nav-home" aria-hidden="true" />
@@ -1058,27 +1070,6 @@ function Header({ eyebrow, title, onBack, backDisabled = false }) {
   );
 }
 
-function QrCodeMatrix({ matrix }) {
-  return (
-    <div
-      className="qr-matrix"
-      role="img"
-      aria-label="키오스크 전달용 건강정보 QR코드"
-      style={{ '--qr-size': matrix.length }}
-    >
-      {matrix.flatMap((row, rowIndex) =>
-        row.map((dark, columnIndex) => (
-          <span
-            key={`${rowIndex}-${columnIndex}`}
-            className={dark ? 'dark' : undefined}
-            aria-hidden="true"
-          />
-        ))
-      )}
-    </div>
-  );
-}
-
 function Field({ label, value, onChange }) {
   return (
     <div className="field-row">
@@ -1102,6 +1093,7 @@ function SelectField({ label, value, options, onChange }) {
     <div className="field-row">
       <label>{label}</label>
       <select value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="" disabled>선택해주세요</option>
         {options.map((option) => (
           <option key={option} value={option}>{option}</option>
         ))}
@@ -1123,14 +1115,18 @@ function LinkedRow({ label, value, onClick }) {
 }
 
 function ChoiceOptionScreen({ config, mode, value, onBack, onSelect, onCustomChange, onDone }) {
+  const selected = String(value || '').split(',').map((item) => item.trim());
+  const custom = selected.filter((item) => item && !config.options.includes(item)).join(', ');
   return (
     <>
       <Header title={config.title} eyebrow={config.eyebrow} onBack={onBack} />
       <section className="choice-option-wrap">
+        <p>해당하는 항목을 모두 선택해주세요. 약은 가능하면 구체적인 성분·종류를 선택해주세요.</p>
         {config.options.map((option) => (
           <button
             key={option}
-            className={`tag-btn ${mode === option ? 'active' : ''}`}
+            className={`tag-btn ${(option === '직접 입력' ? mode === option || custom : selected.includes(option)) ? 'active' : ''}`}
+            aria-pressed={option === '직접 입력' ? mode === option : selected.includes(option)}
             type="button"
             onClick={() => onSelect(option)}
           >
@@ -1138,12 +1134,12 @@ function ChoiceOptionScreen({ config, mode, value, onBack, onSelect, onCustomCha
           </button>
         ))}
 
-      {mode === '직접 입력' && (
+      {(mode === '직접 입력' || custom) && (
           <input
             className="choice-detail choice-detail-full"
-            value={value}
+            value={value === '해당 없음' ? '' : value}
             onChange={(event) => onCustomChange(event.target.value)}
-            placeholder={`${config.label} 내용을 입력하세요`}
+            placeholder={`${config.label} 전체 항목을 쉼표로 구분해주세요`}
           />
       )}
 

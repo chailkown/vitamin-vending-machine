@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import '../styles/PaymentModal.css';
 
 const PAYMENT_OPTIONS = [
@@ -20,15 +20,20 @@ export default function PaymentModal({
   totalAmount,
   totalQty,
   onPay,
+  onComplete,
 }) {
   const [method, setMethod] = useState('card');
   const [step, setStep] = useState('select');
   const [errorText, setErrorText] = useState('');
   const [receipt, setReceipt] = useState(null);
+  const paying = useRef(false);
+  const [requiresReview, setRequiresReview] = useState(false);
 
   if (!open) return null;
 
   const resetAndClose = () => {
+    if (paying.current) return;
+    if (step === 'success') { onComplete(); return; }
     setStep('select');
     setMethod('card');
     setErrorText('');
@@ -37,23 +42,22 @@ export default function PaymentModal({
   };
 
   const handlePay = async () => {
+    if (paying.current) return;
+    paying.current = true;
     setStep('processing');
     setErrorText('');
-    await new Promise((r) => setTimeout(r, 1500));
-    const result = await onPay(method);
-    if (result?.ok) {
-      setReceipt(result);
-      setStep('success');
-    } else {
-      setErrorText(result?.message || '결제에 실패했습니다.');
-      setStep('error');
-    }
+    try {
+      const result = await onPay(method);
+      if (result?.ok) { setReceipt(result); setStep('success'); }
+      else { setErrorText(result?.message || '주문에 실패했습니다.'); setRequiresReview(Boolean(result?.requiresReview)); setStep('error'); }
+    } catch { setErrorText('주문 결과 확인이 필요합니다. 관리자에게 문의해주세요.'); setRequiresReview(true); setStep('error'); }
+    finally { paying.current = false; }
   };
 
   return (
     <div className="payment-overlay" role="dialog" aria-modal="true">
       <div className="payment-modal">
-        <button type="button" className="payment-close" onClick={resetAndClose} aria-label="닫기">
+        <button type="button" className="payment-close" onClick={resetAndClose} aria-label="닫기" disabled={step === 'processing'}>
           ✕
         </button>
 
@@ -103,7 +107,7 @@ export default function PaymentModal({
         {step === 'success' && receipt && (
           <div className="payment-success">
             <div className="payment-success-icon">✓</div>
-            <h2>결제 완료</h2>
+            <h2>주문 완료</h2>
             <p className="payment-receipt-line">
               {receipt.totalQty}개 · {receipt.totalAmount.toLocaleString()}원
             </p>
@@ -111,7 +115,7 @@ export default function PaymentModal({
             {receipt.orderId && (
               <p className="payment-order-id">주문 #{String(receipt.orderId).slice(0, 8)}</p>
             )}
-            <p className="payment-hint">제품이 배출됩니다. 감사합니다.</p>
+            <p className="payment-hint">{receipt.simulated ? '개발 모드: 배출 시뮬레이션 완료' : '파우치 배출 명령을 전달했습니다. 감사합니다.'}</p>
             <button type="button" className="payment-submit" onClick={resetAndClose}>
               확인
             </button>
@@ -122,7 +126,7 @@ export default function PaymentModal({
           <div className="payment-error">
             <h2>결제 실패</h2>
             <p>{errorText}</p>
-            <button type="button" className="payment-submit" onClick={() => setStep('select')}>
+            <button type="button" className="payment-submit" disabled={requiresReview} onClick={() => setStep('select')}>
               다시 시도
             </button>
           </div>

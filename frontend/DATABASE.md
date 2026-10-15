@@ -57,7 +57,7 @@ Supabase 대시보드 → **SQL Editor** → New query
 | nutrient_id | 영양소 FK |
 | name | 제품명 |
 | category | 영양소 표시명 (`nutrients.name`) |
-| price | **알(1정)당 가격(원)** |
+| price | **1회분 파우치당 가격(원)** |
 | serving_content | 1회 섭취량 함유량 |
 | form | 캡슐 / 정제 / 소프트젤 |
 | remarks | 비고 |

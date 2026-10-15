@@ -61,7 +61,7 @@ create index if not exists vitamins_active_idx on public.vitamins (is_active);
 create index if not exists symptoms_category_idx on public.symptoms (category_id);
 
 comment on table public.vitamins is '자판기 판매 제품 (슬라이드 제품표 24종)';
-comment on column public.vitamins.price is '알(1정)당 가격(원)';
+comment on column public.vitamins.price is '1회분 파우치당 가격(원)';
 comment on column public.vitamins.category is '영양소 표시명 (nutrients.name 과 동일)';
 
 -- ===== RLS =====

@@ -1,0 +1,13 @@
+catalog: {"nutrients":12,"categories":7,"symptoms":22,"products":24}
+category fallback expected 2; actual: 24 categories: 12
+invalid QR accepted: [ [ 'null', true ], [ '[]', true ], [ '42', true ], [ '{}', true ] ]
+unconfigured DB order: {"ok":true,"offline":true,"orderId":null,"totalAmount":160,"totalQty":1,"message":"주문이 완료되었습니다."}
+missing product images: []
+QR ASCII matrix dimensions: 41
+QR RS nonzero syndrome count (valid requires 0): 17
+135-byte QR: QR Version 6 용량을 초과했습니다.
+multi-condition encoded: 1
+custom medication encoded: 99
+fallback disabled: getAll count / getById exists: 0 true
+reload key mismatch model: saved profile becomes {"name":"","age":""}
+verification complete; no source files modified and no network calls made

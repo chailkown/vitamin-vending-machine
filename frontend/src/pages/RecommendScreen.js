@@ -1,14 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import '../styles/RecommendScreen.css';
-import { getAllVitamins } from '../services/vitaminService';
 import {
   getRecommendationCatalog,
-  getRecommendationForSymptom,
-  getProductIdsForSymptom,
-  getProductIdsForNutrients,
+  getRecommendationResult,
   parseQrPayload,
-  getQrProfileRules,
-  DEFAULT_QR_PAYLOAD,
 } from '../services/recommendationService';
 
 export default function RecommendScreen({ onBack, onGoToPurchase }) {
@@ -22,19 +17,24 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
   const [pendingSub, setPendingSub] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState('');
-  const [qrInput, setQrInput] = useState(JSON.stringify(DEFAULT_QR_PAYLOAD));
+  const [qrInput, setQrInput] = useState('');
   const [qrError, setQrError] = useState('');
 
   const [recommendedItems, setRecommendedItems] = useState([]);
   const [showProductDetail, setShowProductDetail] = useState(false);
   const [productDetail, setProductDetail] = useState(null);
+  const mounted = useRef(true);
+  const submitting = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   useEffect(() => {
     (async () => {
       setCatalogLoading(true);
       const data = await getRecommendationCatalog();
-      setCatalog(data);
-      setCatalogLoading(false);
+      if (mounted.current) { setCatalog(data); setCatalogLoading(false); }
     })();
   }, []);
 
@@ -50,56 +50,36 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
   );
 
   useEffect(() => {
+    let cancelled = false;
     const loadRecommended = async () => {
       if (!activeSub) {
         setRecommendedItems([]);
         setRecMeta(null);
         return;
       }
-      const meta = await getRecommendationForSymptom(activeSub);
-      setRecMeta(meta);
-      const all = await getAllVitamins();
-      const items = all.filter((p) => meta.nutrients.includes(p.category));
-      setRecommendedItems(items);
+      const meta = await getRecommendationResult(activeSub);
+      if (!cancelled) { setRecMeta(meta); setRecommendedItems(meta.products); }
     };
     loadRecommended();
+    return () => { cancelled = true; };
   }, [activeSub]);
 
   const buildCombo = async (symptomCode, qrProfile = null) => {
     const { cat, sym } = findSymptomInCatalog(symptomCode);
-    const meta = await getRecommendationForSymptom(symptomCode);
-    let productIds = await getProductIdsForSymptom(symptomCode);
-    let nutrients = [...meta.nutrients];
-    let nutrientExplanations = { ...meta.nutrientExplanations };
-    const nutrientPrecautions = { ...meta.precautions };
-    let qrRules = null;
-
-    if (qrProfile) {
-      qrRules = getQrProfileRules(qrProfile);
-      nutrients = [...new Set([...nutrients, ...qrRules.addedNutrients])]
-        .filter((nutrient) => !qrRules.excludedNutrients.includes(nutrient));
-      productIds = await getProductIdsForNutrients(nutrients, qrRules.excludedNutrients);
-      nutrientExplanations = {
-        ...nutrientExplanations,
-        ...qrRules.reasons,
-      };
-    }
+    const meta = await getRecommendationResult(symptomCode, qrProfile);
 
     return {
+      ...meta,
       title: qrProfile && cat ? `${cat.title} + QR 맞춤 추천` : cat?.title || '추천 조합',
       selectedSub: qrProfile
         ? `${sym?.label || ''} + QR(${qrProfile.name}) 프로필`
         : sym?.label || '',
-      items: productIds,
-      nutrients,
-      nutrientExplanations,
-      nutrientPrecautions,
-      qrProfile,
-      qrRules,
+      nutrientPrecautions: meta.precautions,
     };
   };
 
   const submitQrRecommendation = async () => {
+    if (submitting.current) return;
     const parsed = parseQrPayload(qrInput);
     if (!parsed.ok) {
       setQrError(parsed.message);
@@ -110,24 +90,28 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
     setShowConfirm(false);
     setScanning(true);
     setScanMessage('QR 데이터 분석 중...');
-    setTimeout(async () => {
-      setScanning(false);
+    submitting.current = true;
+    try {
       const combo = await buildCombo(pendingSub, parsed.profile);
-      if (typeof onGoToPurchase === 'function') onGoToPurchase(combo);
-      setActiveSub(null);
-      setPendingSub(null);
-      setScanMessage('스캔 완료');
-      setTimeout(() => setScanMessage(''), 1400);
-    }, 900);
+      if (mounted.current && typeof onGoToPurchase === 'function') onGoToPurchase(combo);
+    } catch {
+      if (mounted.current) { setShowConfirm(true); setQrError('추천 데이터를 불러오지 못했습니다. 다시 시도해주세요.'); }
+    } finally {
+      submitting.current = false;
+      if (mounted.current) setScanning(false);
+    }
   };
 
   const continueWithoutQr = async () => {
+    if (submitting.current) return;
+    submitting.current = true;
     setShowConfirm(false);
-    const combo = await buildCombo(pendingSub);
-    setPendingSub(null);
-    setQrError('');
-    if (typeof onGoToPurchase === 'function') onGoToPurchase(combo);
-    else onBack();
+    try {
+      const combo = await buildCombo(pendingSub);
+      if (mounted.current && typeof onGoToPurchase === 'function') onGoToPurchase(combo);
+    } catch {
+      if (mounted.current) { setShowConfirm(true); setQrError('추천 데이터를 불러오지 못했습니다.'); }
+    } finally { submitting.current = false; }
   };
 
   if (catalogLoading) {
@@ -192,19 +176,22 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
 
         <div className="sub-area">
           {!activeSub ? (
-            <div className="sub-empty">세부 항목을 선택하면 슬라이드 알고리즘에 따른 추천이 표시됩니다.</div>
+            <div className="sub-empty">식사 보완 또는 증상을 선택해주세요. 근거와 건강정보를 검토하며, 추천할 수 없는 경우에는 상담 안내를 표시합니다.</div>
           ) : (
             <div className="detail-box">
               <div className="detail">
                 <h3>선택한 항목</h3>
                 <p>{findSymptomInCatalog(activeSub).sym?.label}</p>
                 <p className="note">QR 스캔 시 개인 건강 프로필이 추천에 반영됩니다.</p>
+                <p role="status">{recMeta?.guidance}</p>
+                {(recMeta?.warnings || []).map((warning) => <p key={warning} className="note">{warning}</p>)}
+                <div>{(recMeta?.sources || []).map((source) => <p key={source.url}><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a></p>)}</div>
               </div>
 
               {nutrients.length > 0 && (
                 <>
                   <div className="rec-nutrients">
-                    <strong>권장 영양소:</strong>
+                    <strong>식사 보완 검토 후보:</strong>
                     {nutrients.map((n) => (
                       <span key={n} className="nutrient-chip">{n}</span>
                     ))}
@@ -270,7 +257,7 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
                     setShowConfirm(true);
                   }}
                 >
-                  구매하기
+                  건강정보 반영·결과 보기
                 </button>
               </div>
             </div>
@@ -283,12 +270,17 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
           <div className="confirm-modal qr-input-modal">
             <div className="confirm-body">
               <h3>QR을 스캔하시겠습니까?</h3>
-              <p className="qr-input-help">예를 누르면 앱 QR 데이터를 반영하고, 아니요를 누르면 선택한 상황만으로 추천합니다.</p>
+              <p className="qr-input-help">앱 QR로 질환·약물·알레르기를 검토합니다. QR 없이 진행하면 일반 정보만 제공하며 개인별 안전성을 확인할 수 없습니다.</p>
               <textarea
                 className="qr-input"
                 value={qrInput}
                 onChange={(event) => setQrInput(event.target.value)}
                 aria-label="QR 데이터"
+                autoFocus
+                placeholder="USB QR 스캐너로 입력하거나 앱 QR JSON을 붙여넣으세요"
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submitQrRecommendation(); }
+                }}
               />
               {qrError && <p className="qr-input-error">{qrError}</p>}
             </div>
