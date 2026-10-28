@@ -1,0 +1,118 @@
+/* Main screen: share available viewport height between the two touch buttons. */
+.main-screen,
+.main-screen * { box-sizing: border-box; }
+
+.main-screen {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  padding: clamp(12px, 3vh, 36px) clamp(12px, 3vw, 40px);
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-x: hidden;
+  overflow-y: auto;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+}
+
+.main-screen .header {
+  flex: 0 0 auto;
+  width: 100%;
+  padding: 0;
+  margin: 0 0 clamp(10px, 2.5vh, 28px);
+  text-align: center;
+}
+.main-screen .logo-icon {
+  display: block;
+  font-size: clamp(36px, 9vh, 100px);
+  line-height: 1.1;
+  margin: 0 0 clamp(4px, 1vh, 12px);
+}
+.main-screen .title {
+  font-size: clamp(28px, 5.5vh, 56px);
+  line-height: 1.15;
+  color: #333;
+  font-weight: 800;
+  margin: 0 0 6px;
+}
+.main-screen .subtitle {
+  font-size: clamp(12px, 2.2vh, 18px);
+  line-height: 1.4;
+  color: #777;
+  margin: 0;
+}
+
+.main-screen .main-content {
+  display: flex;
+  flex: 1 0 244px;
+  width: 100%;
+  max-width: 900px;
+  min-height: 244px;
+  padding-bottom: 8px;
+}
+.main-screen .button-container {
+  display: grid;
+  grid-template-rows: repeat(2, minmax(108px, 1fr));
+  flex: 1;
+  width: 100%;
+  gap: clamp(12px, 3vh, 32px);
+  padding: 0;
+}
+.main-screen .main-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(12px, 3vw, 48px);
+  width: 100%;
+  min-width: 0;
+  min-height: 108px;
+  padding: clamp(14px, 3vh, 44px) clamp(18px, 5vw, 72px);
+  border: 0;
+  border-radius: clamp(16px, 3vh, 36px);
+  color: #fff;
+  text-align: left;
+  font: inherit;
+  box-shadow: 0 5px 14px rgba(0, 0, 0, .12);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.main-screen .purchase-btn {
+  background: linear-gradient(135deg, #ff6b9d, #ff8e7f);
+}
+.main-screen .recommend-btn {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+}
+.main-screen .btn-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+  gap: clamp(6px, 1.5vh, 14px);
+}
+.main-screen .btn-label {
+  font-size: clamp(24px, 4.5vh, 48px);
+  font-weight: 900;
+  line-height: 1.2;
+  color: #fff;
+}
+.main-screen .btn-description {
+  font-size: clamp(14px, 2.4vh, 22px);
+  line-height: 1.4;
+  color: rgba(255, 255, 255, .95);
+  word-break: keep-all;
+}
+.main-screen .btn-icon {
+  flex-shrink: 0;
+  font-size: clamp(40px, 10vh, 110px);
+  line-height: 1;
+}
+.main-screen .main-btn:active { filter: brightness(.94); }
+.main-screen .main-btn:focus-visible { outline: 4px solid #172c53; outline-offset: 3px; }
+
+@media (max-width: 400px) {
+  .main-screen .main-btn { padding-left: 16px; padding-right: 16px; gap: 10px; }
+  .main-screen .btn-icon { font-size: 40px; }
+  .main-screen .btn-label { font-size: 26px; }
+}
