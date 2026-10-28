@@ -14,3 +14,11 @@
 *.log
 .DS_Store
 Thumbs.db
+
+# Local source backups, packaged device credentials, and runtime state
+**/*-backup-*/
+.deploy/
+**/device.json*
+**/journal.sqlite3*
+**/gateway.lock
+**/__pycache__/

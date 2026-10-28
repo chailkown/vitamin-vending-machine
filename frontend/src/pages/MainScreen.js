@@ -29,11 +29,11 @@ export default function MainScreen({ onBuyClick, onRecommendClick }) {
       <div className="main-content">
         {/* 버튼 영역 */}
         <div className="button-container">
-          {/* 직접 구매 버튼 */}
+          {/* 직접 선택 버튼 */}
           <button className="main-btn purchase-btn" onClick={onBuyClick}>
             <div className="btn-content">
-              <div className="btn-label">직접 구매</div>
-              <div className="btn-description">원하는 영양제를 선택해서 구매하기</div>
+              <div className="btn-label">직접 선택</div>
+              <div className="btn-description">원하는 영양제를 선택해 무료로 받기</div>
             </div>
             <div className="btn-icon">🛒</div>
           </button>

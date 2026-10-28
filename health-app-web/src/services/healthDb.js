@@ -1,3 +1,4 @@
+import { requireAuthClient } from './authClient';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL?.trim() || '';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() || '';
 
@@ -15,10 +16,17 @@ const request = async (path, options = {}) => {
     throw new Error('Supabase 앱 DB 환경변수가 없습니다.');
   }
 
+  const { data: { session }, error: sessionError } = await requireAuthClient().auth.getSession();
+  if (sessionError) throw sessionError;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
   const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...options,
+    signal: controller.signal,
     headers: {
       ...headers,
+      Authorization: `Bearer ${session?.access_token || SUPABASE_ANON_KEY}`,
       ...(options.headers || {}),
     },
   });
@@ -31,28 +39,14 @@ const request = async (path, options = {}) => {
   }
 
   return data;
-};
-
-export const findAppUser = async (userId) => {
-  const data = await request(`app_users?user_id=eq.${encodeURIComponent(userId)}&select=*`);
-  return data?.[0] || null;
-};
-
-export const findAppAdmin = async (userId) => {
-  const data = await request(`app_admins?admin_id=eq.${encodeURIComponent(userId)}&select=*`);
-  return data?.[0] || null;
-};
-
-export const createAppUser = async ({ userId, password, name }) => {
-  const data = await request('app_users', {
-    method: 'POST',
-    body: JSON.stringify([{ user_id: userId, password, name }]),
-  });
-  return data?.[0] || null;
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('서버 응답이 지연됩니다. 연결을 확인하고 다시 시도해주세요.');
+    throw error;
+  } finally { clearTimeout(timeout); }
 };
 
 export const getHealthProfile = async (userId) => {
-  const data = await request(`app_health_profiles?user_id=eq.${encodeURIComponent(userId)}&select=*`);
+  const data = await request(`member_health_profiles?user_id=eq.${encodeURIComponent(userId)}&select=*`);
   return data?.[0] || null;
 };
 
@@ -73,14 +67,15 @@ export const saveHealthProfile = async ({ userId, profile, kioskPayload }) => {
     updated_at: new Date().toISOString(),
   };
 
-  const profileRows = await request('app_health_profiles?on_conflict=user_id', {
+  const profileRows = await request('member_health_profiles?on_conflict=user_id', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
     body: JSON.stringify([body]),
   });
 
   // QR expiration belongs to the newly generated QR itself, not the profile save time.
-  return profileRows?.[0] || null;
+  if (!profileRows?.[0]) throw new Error('저장 결과를 확인하지 못했습니다. 다시 시도해주세요.');
+  return profileRows[0];
 };
 
 export const getVendingMachines = async () => {
@@ -88,15 +83,11 @@ export const getVendingMachines = async () => {
   return data || [];
 };
 
-// Demo credential-checked RPC; user_id filtering alone is not an authorization boundary.
-// app_users remains a demo plaintext-password table until Supabase Auth is introduced.
-export const getPurchaseHistory = async (userId, password) => {
-  if (!userId || !password) throw new Error('구매 내역을 확인하려면 다시 로그인해주세요.');
-  const rows = await request('rpc/get_app_purchase_history', {
-    method: 'POST', body: JSON.stringify({ p_user_id: userId, p_password: password }),
-  });
+export const getPurchaseHistory = async (userId) => {
+  if (!userId) throw new Error('다시 로그인해주세요.');
+  const rows = await request(`orders?member_user_id=eq.${encodeURIComponent(userId)}&status=eq.completed&select=*,order_items(*)&order=completed_at.desc`);
   if (!Array.isArray(rows)) throw new Error('구매 내역 응답을 확인할 수 없습니다.');
-  return rows.filter((order) => order.user_id === userId && order.status === 'completed');
+  return rows.filter((order) => order.member_user_id === userId && order.status === 'completed');
 };
 
 export const saveVendingMachine = async (machine) => {

@@ -1,42 +1,78 @@
-# 맞춤형 영양제 파우치 자판기
+# 영양제 무료 배출 시스템
 
-건강정보·QR·구매내역을 관리하는 `health-app-web`과 자판기 키오스크 `frontend`로 구성된다. Android 앱은 `health-app-web/android`의 Capacitor 래퍼를 사용한다. 판매·배출 단위는 **1회분 파우치**다.
+현재 기준: **2026-10-28 (한국시간)**. 결제 기능은 사용하지 않습니다.
 
-## 로컬 실행
+휴대폰에서 가입·로그인하고 건강정보를 저장한 뒤 QR을 표시합니다. 라즈베리파이 키오스크가 QR을 직접 해석해 추천을 계산하고, 선택한 영양제를 Mega로 배출한 뒤 Supabase 재고와 이용내역을 기록합니다.
 
-각 폴더에서 `npm ci` 후 실행한다. Node 22.12 이상을 권장한다.
+## 현재 상태와 다음 작업
 
-- 건강 앱: `cd health-app-web`, `npm run dev` → 포트 3001
-- 키오스크: `cd frontend`, `npm start` → 포트 3000
-- 환경변수는 각 `.env.example`을 참고해 `.env`에 설정한다.
-- 각 폴더에서 `npm run build`로 웹 배포 번들을 만든다.
-- Android: 건강 앱 폴더에서 `npm run android:sync`, `npm run android:open`. APK 빌드는 Java 21 / Android SDK가 필요하다.
+- [진행 현황·완료 범위·남은 작업](STATUS.md)
+- [확정된 QR 규격](QR_PROTOCOL.md)
+- [라즈베리파이 배포·자동 시작](deployment/README.md)
+- [모터 연결·시간 설정·장애 복구](frontend/HARDWARE.md)
+- [DB 구조·권한·SQL 적용 기록](frontend/DATABASE.md)
+- [최근 변경 이력](CHANGE_REPORT.md)
 
-모바일 프로필은 명시적인 저장 버튼으로 사용자별 로컬 저장과 Supabase 저장을 수행한다. 키오스크 사용자 상태는 홈·60초 미사용·완료 확인 시 초기화하며 DB 재고/주문은 지우지 않는다.
+**최신 코드와 DB 수정은 완료했지만, 최신 패키지의 Pi 설치와 실제 아이폰·스캐너·통합 배출 확인은 아직 완료로 기록하지 않았습니다.** 이전 별도 모터 시험에서는 사용자가 실제 배출을 확인했습니다. 두 상태는 다릅니다.
 
-## Supabase 업데이트
+## 확정된 요구사항
 
-처음 설치: `frontend/supabase/schema.sql` → `seed.sql` → `orders_schema.sql` → `payment_schema.sql` → `health-app-web/supabase/app_schema.sql` → `frontend/supabase/kiosk_purchase_history.sql` → `frontend/supabase/catalog_safety_update.sql` 순서로 실행한다.
+- 결제·카드·현금 처리 없이 무료 배출.
+- 휴대폰은 별도 앱 설치 없이 같은 공유기의 웹사이트 사용.
+- QR은 `id,n,a,g,h,w,s,al,c,ag,m` 11개 필드만 전달.
+- `c`, `ag`, `m`은 각각 숫자 하나. 해당 없음은 0.
+- QR에 시간·만료·type·version·발급 토큰을 넣지 않음. 서버 QR 발급/조회도 사용하지 않음.
+- 회원 인증/건강정보 저장/상품·재고·이용내역은 Supabase 사용.
+- 한 번에 총 5개까지. 연결이 확인된 두 모터만 활성화.
+- 모터 작동 시간은 사용자가 나중에 설정. 현재 시험값은 500ms.
 
-기존 DB라면 미적용된 **`kiosk_purchase_history.sql`과 `catalog_safety_update.sql`을 순서대로 추가 적용**한다. 먼저 `app_schema.sql`의 사용자 테이블이 존재해야 한다. 기존 재고에 `seed.sql`을 재실행하면 재고가 100으로 바뀌므로 실행하지 않는다. 새 SQL은 기존 주문/상품을 삭제하지 않는다. 구형 `place_order`의 공개 실행 권한은 제거하며, 앱도 새 RPC만 호출한다.
+## 구성
 
-## 상품 구성과 추천 정책
+| 경로 | 역할 |
+|---|---|
+| `health-app-web/` | React/Vite 휴대폰 웹, Supabase Auth, 본인 건강정보, QR, 이용내역 |
+| `frontend/` | React 키오스크, QR 직접 해석, 추천, 장바구니, 무료 배출 확인 |
+| `pi_gateway/` | Python/serial/SQLite, 기기 인증, 재고 예약, Mega 명령, 결과 확정·복구 |
+| `deployment/` | 패키징·설치·기기 설정 예제 |
+| `frontend/supabase/`, `health-app-web/supabase/` | SQL 적용 기록. 기존 DB에 무작정 재실행하지 않음 |
 
-기본 24상품 중 밀크시슬·비타민 E 각각 2상품을 비활성화하여 20상품을 표시한다. 영양소 12종 정의와 과거 상품 기록은 유지한다. 원격 DB에 새 SQL을 적용해야 DB에서도 비활성화되며, 프런트엔드에서는 같은 정책을 먼저 적용한다. 기존 슬롯 번호는 바꾸지 않으므로 실제 20슬롯 매핑은 운영자가 확인한다.
+## 개발 실행
 
-질환 20종·알레르기 12종·약물 분류 19종을 지원하며 모바일에서 복수 선택할 수 있다. 추천은 검토된 로컬 정책을 기준으로 하므로 과거 DB의 증상 매핑을 다시 사용하지 않는다. 근거와 제외·보류 사유는 화면에 표시한다. 자세한 출처와 한계는 `RECOMMENDATION_REVIEW.md`를 참고한다. QR에는 시간 제한이 없고 키오스크 세션의 60초 미사용 초기화는 별도로 유지한다.
+Node 22.12 이상을 권장합니다. 각 앱의 `.env.example`을 `.env`로 복사하고 같은 Supabase 프로젝트의 URL·공개 키를 설정합니다. secret/service_role 키를 프런트엔드에 넣지 않습니다.
 
-두 앱은 같은 Supabase 프로젝트를 사용한다. 휴대폰과 자판기는 서로 다른 네트워크여도 인터넷으로 Supabase에 접근할 수 있다. 앱 구매내역 조회에는 자판기 로컬 API가 필요하지 않다. 원격 DB의 키·설정·권한과 실제 Wi-Fi/LTE 연결은 별도 확인해야 한다.
+```bash
+cd health-app-web
+npm ci
+npm run dev -- --host 0.0.0.0
+```
 
-## 배출 연결
+다른 터미널:
 
-`frontend/HARDWARE.md`를 참고한다. 기본값에서는 DB 또는 배출 API가 없으면 주문이 실패한다. `REACT_APP_DISPENSE_MODE=simulation`은 **개발 서버에서만** 허용되며 DB는 여전히 필요하다. 시뮬레이션 기록은 구매내역에 시연으로 구분한다. 결제 수단 UI는 여전히 시연 단계이며 실제 카드 승인 연동은 별도 작업이다.
+```bash
+cd frontend
+npm ci --legacy-peer-deps
+npm start
+```
 
-## 검증
+개발 서버 주소는 휴대폰 웹 3001, 키오스크 3000입니다. `npm start`만으로는 실제 배출할 수 없습니다. 실제 배출은 기기 인증 설정을 가진 Pi gateway가 제공하는 `http://localhost:3000`에서 실행합니다.
 
-- 건강 앱: `npm run lint`, `npm run test:integration`
-- 키오스크: `npm test -- --watchAll=false --runInBand`
+## 확인한 검증
 
-통합 테스트는 메모리 PostgreSQL에서 실행하므로 원격 재고나 사용자 DB를 수정하지 않는다. 과거 실제 재고를 차감하던 주문 검사 도구는 `frontend/scripts/test-order-local.mjs`로 교체했다. `npm run db:test-order`도 같은 안전한 로컬 통합 테스트를 실행한다(건강 앱 의존성 설치 필요).
+- 모바일 lint/build, 키오스크 build 성공.
+- 통합 테스트 29개, React 6개, Python 가상 모터/HTTP 8개 통과.
+- 사용자 예시의 11개 필드 JSON → QR PNG → 별도 해독기 → 키오스크 계산 형식 왕복 검증.
+- 실제 DB의 무료 배출·재고·회원 내역·중복 방지 시험은 변경을 롤백했고, 실 모터는 구동하지 않았습니다.
 
-이번 수정과 검증 범위는 `CHANGE_REPORT.md`에 기록했다. 현재 인증은 평문 비밀번호·공개 앱 RLS를 사용하는 졸업작품 데모이며, QR 구조 검증은 인증/서명 검증을 대신하지 않는다. 실제 개인정보 대신 테스트 데이터를 사용한다.
+```bash
+cd health-app-web
+npm run lint
+npm run test:integration
+npm run build
+cd ../frontend
+CI=true npm test -- --watchAll=false --runInBand
+npm run build
+cd ../pi_gateway
+python3 test_gateway.py
+```
+
+실제 운영 전 확인할 항목은 [STATUS.md](STATUS.md)를 기준으로 합니다. `PROJECT_ANALYSIS.md`와 이전 변경 기록은 역사 자료입니다.

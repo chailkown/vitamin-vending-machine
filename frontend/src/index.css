@@ -10,3 +10,9 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+html, body, #root { width:100%; min-width:0; overflow-x:hidden; }
+html { -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+
+/* Keep the right edge clear on the physical portrait panel. */
+#root { width:96%; margin-left:0; margin-right:auto; }

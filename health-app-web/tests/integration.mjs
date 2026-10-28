@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { PNG } from 'pngjs';
 import jsQR from 'jsqr';
-import { toKioskProfile } from '../src/services/qrProfile.js';
+import { toKioskProfile, serializeQrProfile } from '../src/services/qrProfile.js';
 import { createQrDataUrl } from '../src/services/qrImage.js';
 import { loadUserProfile, saveUserProfile } from '../src/services/profileStorage.js';
 
@@ -16,7 +16,7 @@ const healthCatalog = JSON.parse(read('frontend/src/data/healthCatalog.json'));
 const loadPure = (path) => import('data:text/javascript;base64,' + Buffer.from(read(path).replace("import healthCatalog from '../data/healthCatalog.json';", `const healthCatalog = ${JSON.stringify(healthCatalog)};`)).toString('base64'));
 const { parseQrPayload } = await loadPure('frontend/src/services/qrPayload.js');
 const { clearKioskSession, watchKioskIdle } = await loadPure('frontend/src/services/kioskSession.js');
-const profile = { name: '테스트 사용자', age: '25', gender: '남성', height: '170', weight: '65', smoking: '비흡연', alcohol: '안 함', conditions: ['간질환','당뇨'], allergies: '해당 없음', medications: '고혈압약, 직접입력약' };
+const profile = { name: '테스트 사용자', age: '25', gender: '남성', height: '170', weight: '65', smoking: '비흡연', alcohol: '안 함', conditions: ['간질환'], allergies: '해당 없음', medications: '직접입력약' };
 const now = Date.now();
 const payload = toKioskProfile(profile, 'test-a', now);
 const memory = () => {
@@ -35,14 +35,15 @@ test('A/B profiles survive reload, never auto-save empty fallback', () => {
   assert.deepEqual(loadUserProfile(store,'missing',{}),{});
   assert.equal(store.getItem('health-app-profile-v1-missing'),null);
 });
-test('versioned QR preserves multiple conditions and custom medications', () => {
-  assert.deepEqual(payload.c,[1,2]);
-  assert.deepEqual(payload.conditions,['간질환','당뇨']);
-  assert.deepEqual(payload.medications,['고혈압약','직접입력약']);
-  assert.equal(parseQrPayload(JSON.stringify(payload),now).ok,true);
+test('QR contains exactly the agreed 11 fields and scalar codes', () => {
+  assert.deepEqual(Object.keys(payload),['id','n','a','g','h','w','s','al','c','ag','m']);
+  assert.equal(payload.c,1);assert.equal(payload.ag,0);assert.equal(payload.m,99);
+  assert.equal(parseQrPayload(JSON.stringify(payload)).ok,true);
+  assert.throws(()=>toKioskProfile({...profile,conditions:['간질환','당뇨']},'test-a'),/하나만/);
 });
+
 test('invalid, malformed, missing and wrong type QR rejected', () => {
-  for (const raw of [null,{},[],42,'null','{}','[]','42','{bad',JSON.stringify({...payload,a:'25'}),JSON.stringify({...payload,id:''}),JSON.stringify({...payload,version:1}),JSON.stringify({...payload,type:'other'}),JSON.stringify({...payload,c:null}),JSON.stringify({...payload,conditions:[42]}),JSON.stringify({...payload,h:0})]) {
+  for (const raw of [null,{},[],42,'null','{}','[]','42','{bad',JSON.stringify({...payload,a:'25'}),JSON.stringify({...payload,id:''}),JSON.stringify({...payload,c:null}),JSON.stringify({...payload,h:0})]) {
     assert.equal(parseQrPayload(raw,now).ok,false,raw);
   }
   for (const field of Object.keys(payload)) {
@@ -127,7 +128,7 @@ test('mobile and kiosk health catalogs agree; every new option round-trips witho
     for (const [name,code] of Object.entries(healthCatalog[kind])) {
       const next = toKioskProfile({...profile,[kind]:[name]},'test-a');
       assert.equal(parseQrPayload(JSON.stringify(next)).ok,true,`${kind}: ${name}`);
-      assert.deepEqual(next[{conditions:'c',allergies:'ag',medications:'m'}[kind]],[code]);
+      assert.equal(next[{conditions:'c',allergies:'ag',medications:'m'}[kind]],code);
     }
   }
   assert.equal(parseQrPayload({...payload,c:[0]}).ok,false);
@@ -204,17 +205,18 @@ test('kiosk reset clears only transient kiosk keys, preserving inventory/history
   for (const key of ['inventory','history','vitamin-kiosk-pending-order']) assert.equal(storage.getItem(key),'keep');
 });
 
-test('mobile history service uses the credential RPC and defensively excludes other users/failures', async () => {
+test('mobile history uses authenticated JWT and excludes other users/failures', async () => {
   let sent;
-  const ctx = vm.createContext({ fetch: async (url, options) => {
-    sent = {url,body:JSON.parse(options.body)};
-    return {ok:true,text:async()=>JSON.stringify([{user_id:'A',status:'completed'},{user_id:'B',status:'completed'},{user_id:'A',status:'failed'}])};
+  const ctx = vm.createContext({ AbortController,setTimeout,clearTimeout, requireAuthClient:()=>({auth:{getSession:async()=>({data:{session:{access_token:'member-jwt'}}})}}), fetch: async (url, options) => {
+    sent = {url,headers:options.headers};
+    return {ok:true,text:async()=>JSON.stringify([{member_user_id:'A',status:'completed'},{member_user_id:'B',status:'completed'},{member_user_id:'A',status:'failed'}])};
   } });
   vm.runInContext(strip(read('health-app-web/src/services/healthDb.js')).replace(/import\.meta\.env/g,'({VITE_SUPABASE_URL:"https://example.supabase.co",VITE_SUPABASE_ANON_KEY:"demo"})'),ctx);
   const result=await vm.runInContext('getPurchaseHistory("A","a-pass")',ctx);
-  assert.equal(result.length,1); assert.equal(result[0].user_id,'A');
-  assert.ok(sent.url.endsWith('/rpc/get_app_purchase_history'));
-  assert.deepEqual(sent.body,{p_user_id:'A',p_password:'a-pass'});
+  assert.equal(result.length,1); assert.equal(result[0].member_user_id,'A');
+  assert.ok(sent.url.includes('/orders?member_user_id=eq.A&status=eq.completed'));
+  assert.equal(sent.headers.Authorization,'Bearer member-jwt');
+  assert.ok(!sent.url.includes('a-pass'));
 });
 test('hardware service handles acknowledged, not-started and unknown results; production disallows simulation', async () => {
   const source = strip(read('frontend/src/services/dispenserService.js'));
@@ -230,44 +232,28 @@ test('hardware service handles acknowledged, not-started and unknown results; pr
   }
 });
 
-const cart=[{product:{id:1,price:1},qty:2}];
-const orderCtx = (rpc, configured=true, dispense=async()=>({ok:true})) => {
-  const ctx=vm.createContext({supabase:{rpc},isSupabaseConfigured:configured,dispenseOrder:dispense,isDispenserConfigured:()=>true,
-    window:{sessionStorage:memory()},crypto:{randomUUID:()=> '11111111-1111-4111-8111-111111111111'}});
-  vm.runInContext(strip(read('frontend/src/data/productPolicy.js')),ctx);
-  vm.runInContext(strip(read('frontend/src/services/orderService.js')),ctx);
-  ctx.cart=cart;
-  return {ctx,call:()=>vm.runInContext('placeOrder(cart,{userId:"test-a"})',ctx)};
+const cart=[{product:{id:3},qty:1}];
+const freeContext=(fetcher,hasGateway=true)=>{
+ const storage=memory();const ctx=vm.createContext({window:{localStorage:storage},document:{querySelector:()=>hasGateway?{content:'csrf-test'}:null},
+  crypto:{getRandomValues:(bytes)=>{bytes.fill(7);return bytes;}},Uint8Array,setTimeout,clearTimeout,AbortController,fetch:fetcher});
+ vm.runInContext(strip(read('frontend/src/services/orderService.js')),ctx);ctx.cart=cart;
+ return {ctx,storage,call:()=>vm.runInContext('placeOrder(cart,{qrProfile:{id:"member"}})',ctx)};
 };
-test('DB missing or DB rejection can never produce success or dispense', async () => {
-  let count=0;
-  const offline=orderCtx(async()=>{count++;},false);
-  assert.equal((await offline.call()).code,'DB_UNAVAILABLE'); assert.equal(count,0);
-  const error=orderCtx(async()=>({error:{code:'P0001',message:'재고 부족'}}),true,async()=>{throw new Error('must not dispense');});
-  assert.equal((await error.call()).ok,false);
+test('free dispensing never calls cloud privileges from browser; gateway is required',async()=>{
+ const h=freeContext(()=>{throw new Error('must not run');},false);
+ assert.equal((await h.call()).code,'GATEWAY_UNAVAILABLE');
 });
-test('order calls DB reserve -> hardware -> DB finalize and uses server totals', async () => {
-  const sequence=[];
-  const h=orderCtx(async(name)=>{sequence.push(name);return name==='place_kiosk_order'
-    ? {data:{order_id:'id',status:'dispensing',items:[{quantity:2}]}}
-    : {data:{order_id:'id',status:'completed',total_amount:320,total_qty:2,payment_method:'card'}};},true,async()=>{sequence.push('hardware');return {ok:true};});
-  const result=await h.call(); assert.equal(result.ok,true); assert.equal(result.totalAmount,320);
-  assert.deepEqual(sequence,['place_kiosk_order','hardware','finish_kiosk_order']);
+test('free request forwards the agreed QR JSON without adding a separate identity field or price',async()=>{
+ let sent;
+ const h=freeContext(async(url,options)=>{sent={url,body:JSON.parse(options.body),headers:options.headers};return {json:async()=>({ok:true,requiresReview:false})};});
+ assert.equal((await h.call()).ok,true);assert.equal(sent.url,'/api/order');assert.equal(sent.body.qrProfile.id,'member');
+ assert.equal(sent.body.userId,undefined);assert.equal(sent.body.price,undefined);assert.equal(sent.headers['X-Kiosk-Token'],'csrf-test');
+ assert.equal(h.storage.getItem('vitamin-kiosk-pending-order'),null);
 });
-test('double click cannot reserve twice; finalization failure blocks new orders', async () => {
-  let resolve, count=0;
-  const h=orderCtx(async(name)=>{count++; if(name==='place_kiosk_order') return new Promise(r=>{resolve=r;});return {error:{code:'xx',message:'DB failed'}};});
-  const first=h.call(); assert.equal((await h.call()).code,'ORDER_BUSY');
-  resolve({data:{order_id:'id',status:'dispensing',items:[]}});
-  assert.equal((await first).requiresReview,true);
-  assert.equal((await h.call()).code,'RECOVERY_REQUIRED'); assert.equal(count,2);
-});
-test('unknown hardware outcome is review_required and never completed', async () => {
-  let outcome;
-  const h=orderCtx(async(name,args)=>name==='place_kiosk_order'
-    ? {data:{order_id:'id',status:'dispensing',items:[]}}
-    : (outcome=args.p_result,{data:{status:args.p_result}}),true,async()=>({ok:false,safeToRestore:false,message:'unknown'}));
-  assert.equal((await h.call()).requiresReview,true); assert.equal(outcome,'review_required');
+test('free double-click is blocked and unknown output keeps durable recovery reference',async()=>{
+ let reject;const h=freeContext(()=>new Promise((resolve,r)=>{reject=r;}));
+ const first=h.call();assert.equal((await h.call()).code,'ORDER_BUSY');reject(new Error('lost'));
+ assert.equal((await first).requiresReview,true);assert.ok(h.storage.getItem('vitamin-kiosk-pending-order'));
 });
 
 test('actual PostgreSQL schemas: stock, idempotency, failed orders and user history', async () => {
@@ -320,4 +306,76 @@ test('actual PostgreSQL schemas: stock, idempotency, failed orders and user hist
   await assert.rejects(db.query('select place_kiosk_order($1::jsonb,$2::uuid,$3::text) as result',[JSON.stringify([{vitamin_id:1,quantity:4},{vitamin_id:1,quantity:4}]),'55555555-5555-4555-8555-555555555555','A']),/재고/);
   assert.equal(await stock(),6);
   await db.close();
+});
+
+
+test('member profile save carries the JWT and reports DB failure without success', async () => {
+  let sent, fail=false;
+  const ctx=vm.createContext({AbortController,setTimeout,clearTimeout,requireAuthClient:()=>({auth:{getSession:async()=>({data:{session:{access_token:'member-jwt'}}})}}),
+    fetch:async(url,options)=>{sent={url,options};return {ok:!fail,text:async()=>JSON.stringify(fail?{message:'denied'}:[{user_id:'A'}])};}});
+  vm.runInContext(strip(read('health-app-web/src/services/healthDb.js')).replace(/import\.meta\.env/g,'({VITE_SUPABASE_URL:"https://example.supabase.co",VITE_SUPABASE_ANON_KEY:"demo"})'),ctx);
+  ctx.profile=profile;ctx.payload=payload;
+  await vm.runInContext('saveHealthProfile({userId:"A",profile,kioskPayload:payload})',ctx);
+  assert.ok(sent.url.includes('/member_health_profiles?on_conflict=user_id'));
+  assert.equal(sent.options.headers.Authorization,'Bearer member-jwt');
+  assert.equal(JSON.parse(sent.options.body)[0].user_id,'A');
+  fail=true;
+  await assert.rejects(vm.runInContext('saveHealthProfile({userId:"A",profile,kioskPayload:payload})',ctx),/denied/);
+});
+
+
+test('real authentication API is used and rejected credentials never become a local login', async () => {
+  let called, reject=false;
+  const ctx=vm.createContext({createClient:()=>({auth:{
+    signUp:async(body)=>{called={kind:'signup',body};return {data:{user:{id:'uuid'},session:null},error:null};},
+    signInWithPassword:async(body)=>{called={kind:'login',body};return reject?{error:new Error('invalid credentials')}:{data:{user:{id:'uuid'},session:{access_token:'jwt'}}};}
+  }})});
+  vm.runInContext(strip(read('health-app-web/src/services/authClient.js')).replace(/import\.meta\.env/g,'({VITE_SUPABASE_URL:"https://example.supabase.co",VITE_SUPABASE_ANON_KEY:"demo"})'),ctx);
+  const signup=await vm.runInContext('authenticateMember({mode:"signup",email:"sample@example.com",password:"eight-chars",name:"테스트"})',ctx);
+  assert.equal(signup.session,null);assert.equal(called.kind,'signup');assert.equal(called.body.options.data.name,'테스트');
+  const login=await vm.runInContext('authenticateMember({mode:"login",email:"sample@example.com",password:"eight-chars"})',ctx);
+  assert.equal(login.session.access_token,'jwt');assert.equal(called.kind,'login');
+  reject=true;
+  await assert.rejects(vm.runInContext('authenticateMember({mode:"login",email:"sample@example.com",password:"bad"})',ctx),/invalid credentials/);
+});
+
+
+test('phone QR is ASCII-only for HID scanners and decodes to the exact Korean profile', async () => {
+  const raw=serializeQrProfile(toKioskProfile(profile,'11111111-1111-4111-8111-111111111111'));
+  assert.match(raw,/^[\x20-\x7e]+$/);
+  assert.deepEqual(JSON.parse(raw),toKioskProfile(profile,'11111111-1111-4111-8111-111111111111'));
+  assert.equal(parseQrPayload(raw).ok,true);
+  const png=PNG.sync.read(Buffer.from((await createQrDataUrl(raw)).split(',')[1],'base64'));
+  const scanned=jsQR(new Uint8ClampedArray(png.data),png.width,png.height);
+  assert.ok(scanned);assert.equal(scanned.data,raw);
+  assert.equal(parseQrPayload(scanned.data).profile.name,profile.name);
+});
+
+test('phone requires scalar, valid code values', () => {
+  const valid=toKioskProfile(profile,'test-a');
+  assert.throws(()=>serializeQrProfile({...valid,c:[0]}),/형식/);
+  assert.throws(()=>serializeQrProfile({...valid,n:''}),/형식/);
+});
+
+test('kiosk calculates from the compact QR without a server request',async()=>{
+ const ctx=vm.createContext({healthCatalog,TextEncoder});
+ vm.runInContext(strip(read('frontend/src/services/qrPayload.js')),ctx);vm.runInContext(strip(read('frontend/src/services/qrResolver.js')),ctx);
+ ctx.raw=JSON.stringify({id:'ssdd',n:'차일권',a:25,g:'M',h:167,w:68,s:1,al:0,c:0,ag:0,m:0});
+ const result=await vm.runInContext('resolveQrPayload(raw)',ctx);
+ assert.equal(result.ok,true);assert.equal(result.profile.id,'ssdd');assert.deepEqual(Array.from(result.profile.conditionCodes),[0]);
+ assert.equal(result.credential,undefined);
+});
+
+test('verification link parser rejects another project before invoking auth',async()=>{
+ const ctx=vm.createContext({URL,createClient:()=>({auth:{verifyOtp:()=>{throw new Error('should not run');}}})});
+ vm.runInContext(strip(read('health-app-web/src/services/authClient.js')).replace(/import\.meta\.env/g,'({VITE_SUPABASE_URL:"https://example.supabase.co",VITE_SUPABASE_ANON_KEY:"demo"})'),ctx);
+ await assert.rejects(vm.runInContext('verifySignupLink("https://other.example/auth/v1/verify?token=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&type=signup")',ctx),/프로젝트/);
+});
+
+
+test('user example QR survives PNG decode without extra fields or expiry',async()=>{
+ const value={id:'ssdd',n:'차일권',a:25,g:'M',h:167,w:68,s:1,al:0,c:0,ag:0,m:0};
+ const png=PNG.sync.read(Buffer.from((await createQrDataUrl(serializeQrProfile(value))).split(',')[1],'base64'));
+ const result=jsQR(new Uint8ClampedArray(png.data),png.width,png.height);
+ assert.ok(result);assert.deepEqual(JSON.parse(result.data),value);assert.equal(parseQrPayload(result.data).ok,true);
 });

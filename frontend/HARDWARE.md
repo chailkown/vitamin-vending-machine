@@ -1,48 +1,41 @@
-# Raspberry Pi → Arduino 파우치 배출 연결
+# Pi → Mega 무료 배출
 
-현재 저장소에는 Arduino/serial 제어 코드가 없다. 기존 별도 제어 프로그램을 Pi의 로컬 API에서 호출하도록 연결해야 한다. 브라우저의 `src/services/dispenserService.js`가 연결 지점이다. **이 문서의 API 계약은 준비됐지만 실제 serial API 서버는 이 저장소에서 구현/실행하지 않았다.**
+2026-10-28 기준. 구현은 `../pi_gateway/server.py`, 배포는 [deployment/README.md](../deployment/README.md), 진행 현황은 [STATUS.md](../STATUS.md)를 참고합니다.
 
-## 재고 데이터 관리 위치
+## 연결
 
-재고의 기준 데이터는 Supabase의 `vitamins.stock`으로 통일한다. 현재 저장소의 주문 코드는 이미 Supabase RPC에서 재고 확인·예약 차감·미배출 실패 복원을 처리한다. Pi/Arduino는 배출 명령 실행과 결과 응답을 담당하며, 같은 주문의 재고를 별도 SQLite에서 다시 차감하지 않는다.
+Pi 4B + Mega 2560 R3, USB CH340, 115200 baud. D2는 DHT 배선용으로 보존하지만 현재 펌웨어는 DHT를 읽지 않습니다. 외부 전원/모스펫 모듈로 모터를 구동하며 GPIO에서 모터 전원을 공급하지 않습니다.
 
-외부 제어 프로그램에서 SQLite를 사용하고 있다면 재고 읽기·차감·복원 경로를 제거하고 위 RPC 흐름과 연결해야 한다. 단, 중복 배출 방지를 위한 주문 ID·실행 상태 기록은 재고 원장과 별개이므로 유지해야 한다. 외부 프로그램은 이 저장소에 없어 실제 SQLite 사용 여부 및 이전 완료 여부는 확인되지 않았다. Supabase 연결 실패 시 주문·배출을 시작하지 않는 현재 동작을 유지한다.
+- ID3 비타민 C → 슬롯1 → D3.
+- ID5 비타민 D3 → 슬롯2 → D4.
+- 나머지 상품은 모터 미연결로 비활성. 펌웨어 출력 매핑은 슬롯1~20 → D3~D22.
+- 현재 500ms는 기존 시험값. 사용자가 나중에 교정하기로 했습니다.
 
-## 최소 매핑
+## 실행 계약
 
-Supabase `vitamins.dispenser_slot`에 연결된 물리 슬롯 1~20을 지정한다. 기본값 NULL은 미연결이며 임의 매핑하지 않았다. 한 물리 슬롯에 상품 하나만 연결하도록 unique 제약을 둔다. 상품은 24종이므로 실제 20개 모터에 사용할 상품을 선택해 슬롯을 설정해야 한다. 실제 미연결 상품은 `is_active=false`로 판매 목록에서 제외한다.
+Pi gateway가 정적 키오스크와 `/api/order`를 같은 origin에서 제공합니다. 브라우저에는 기기 비밀키를 주지 않습니다. Host/Origin/CSRF 검사와 localhost 제어 제한을 사용합니다. Windows/휴대폰에서 원격으로 모터를 돌리는 경로는 기본 차단합니다.
 
-Pi의 기존 제어 프로그램에서 **slot → Arduino pin → runTime** 매핑을 관리한다. 브라우저가 핀/시간을 임의로 보내지 않는다. 예를 들어 모터/파우치 실제 배출량을 측정해 런타임을 설정하고 수량 2이면 1회분 파우치 두 개의 명령을 순서대로 실행한다.
+1. Pi가 기기 인증으로 `reserve_free_order` 호출: 재고 검사/예약, 무료 기록, QR 식별자 연결.
+2. Mega에 `RUN 슬롯 시간` 전달 후 STARTED와 DONE 확인.
+3. `finish_free_order`로 completed/failed/review_required 확정.
+4. 결과 불명은 자동 재배출/재고 복원하지 않고 SQLite journal로 잠금 보존.
 
-## 로컬 API 계약
+DB가 재고의 기준입니다. SQLite는 실행 기록이며 별도 재고 장부가 아닙니다. 브라우저를 닫거나 Pi를 재시작해도 미확정 명령을 재실행하지 않습니다.
 
-환경변수 `REACT_APP_DISPENSER_URL=http://127.0.0.1:9000/dispense`는 예시다. 실제 Pi에서 키오스크를 실행할 때 로컬 API 주소로 지정한다. 휴대폰은 이 주소를 사용하지 않고 Supabase만 호출한다.
+## 시간 설정과 복구
 
-POST JSON:
-
-```json
-{"orderId":"주문 UUID","items":[{"slot":1,"quantity":2},{"slot":3,"quantity":1}]}
+```bash
+python3 ~/.local/share/vitamin-vending/pi/set_runtime.py --slot 1 --ms 500
+systemctl --user restart vitamin-kiosk
 ```
 
-- Pi는 `orderId`를 멱등성 키로 사용해 **같은 주문을 두 번 배출하지 않아야 한다**. 프로세스 재시작에도 유지되는 최소 중복 방지 저장이 필요하다. 상세 모터 로그 시스템은 요구하지 않는다.
-- 모든 명령을 Arduino에 전달하고 정상 응답을 받았으면 HTTP 200 `{"accepted":true}`.
-- 하나의 명령도 시작하지 않았다는 사실이 확실하면 `{"accepted":false,"notStarted":true,"message":"오류 설명"}`.
-- 일부 배출·타임아웃·응답 분실처럼 결과가 불확실하면 `notStarted:true`를 반환하면 안 된다.
-- 전체 파우치 명령이 끝난 뒤 응답한다. 프론트 타임아웃은 현재 20초다. 수량/실제 동작시간에 따라 작업형 API 또는 상한을 맞춰야 한다. 20초 초과는 자동 완료가 아닌 관리자 확인 대상으로 처리한다.
-- localhost 전용 바인딩, 키오스크 origin만 허용하는 CORS, 슬롯·수량 검증이 필요하다. 원격 공개 제어 API로 열지 않는다.
+이 명령은 설정만 바꿉니다. 실제 측정값을 입력합니다. 범위100~5000ms, 현재 등록 슬롯만 허용합니다.
 
-배출 센서가 없으므로 여기서 성공은 **Arduino 명령 전달 및 응답 확인**이며 실제 파우치가 떨어졌다는 센서 검증은 아니다. USB MQ160W 스캐너는 HID 키보드 입력/Enter 모드로 설정해 추천 화면의 QR 입력창에 입력한다. 초점·한글 UTF-8 JSON·전체 길이를 실물로 검증해야 한다.
+```bash
+systemctl --user stop vitamin-kiosk
+python3 ~/.local/share/vitamin-vending/pi/recover.py
+```
 
-## 주문과 장애
+수령구/재고 확인 후 출력된 request ID를 사용해 `--outcome completed --confirmed`, 또는 **하나도 배출되지 않은 경우에만** `--outcome failed --confirmed`로 확정합니다. 일부만 배출됐다면 일괄 failed로 복원하지 말고 별도 정산이 필요합니다. journal을 삭제해 잠금을 푸는 방식은 사용하지 않습니다.
 
-1. `place_kiosk_order`: 서버에서 상품 재고를 잠그고 검사 → 주문 `dispensing` 저장 → 재고 예약/차감. 확정 가격·슬롯 snapshot을 반환한다.
-2. 배출 API에 위 명령 전달.
-3. 성공이면 `finish_kiosk_order(...,'completed')`; 모든 명령 미시작이 확인되면 `'failed'`로 변경하고 예약 재고 복원.
-4. 불확실하면 `'review_required'`로 유지한다. 재고를 자동 복원하지 않고 구매 완료에도 표시하지 않는다.
-5. 완료 화면 확인 시 키오스크 UI 초기화. DB 주문과 차감된 재고는 그대로 유지한다.
-
-네트워크 오류나 브라우저 종료로 단계가 끊길 수 있다. `vitamin-kiosk-pending-order`에는 건강정보 대신 requestId만 저장해 자동 재주문을 막는다. 일반 reset은 이 복구 참조를 지우지 않는다. **관리자가 실제 배출·DB 상태를 확인하고 requestId로 확정한 뒤 이 키 하나를 제거해야 한다.** 키 제거만으로 문제를 해결한 것으로 간주하지 않는다. 브라우저 전체 종료로 sessionStorage가 사라져도 DB의 dispensing/review 주문은 남는다.
-
-복구 시 기존 주문 ID와 request ID로 `finish_kiosk_order`를 호출한다. 실패 확정은 파우치가 하나도 나가지 않은 경우에만 한다. 부분 배출은 수동 재고 정산이 필요하다. 이미 완료/실패한 주문의 다른 상태 변경은 막고, 같은 결과 재호출은 재고를 두 번 변경하지 않는다.
-
-실제 배출·센서·실제 결제·Pi API 구현은 실물 연결 작업으로 남아 있다. 위 인터페이스만으로 하드웨어가 연결됐다고 볼 수 없다.
+센서가 없으므로 DONE/완료는 출력 종료 확인이고 실제 낙하 감지는 아닙니다. 이전 별도 9000 시험에서의 실물 성공과 최신 gateway 통합 시험은 구분합니다. 최신 통합은 현장 확인이 남아 있습니다.

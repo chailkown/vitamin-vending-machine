@@ -1,129 +1,34 @@
-# 자판기 Supabase DB 연동 가이드
+# 현재 DB 연결과 적용 기록
 
-## 1. Supabase 프로젝트 준비
+2026-10-28 기준. 같은 Supabase 프로젝트를 두 웹과 Pi gateway가 사용합니다. `.env`와 기기 비밀 설정은 Git에 올리지 않습니다.
 
-1. [https://supabase.com](https://supabase.com) 에서 프로젝트 생성
-2. **Project Settings → API** 에서 아래 값 복사
-   - **Project URL** → `REACT_APP_SUPABASE_URL`
-   - **anon public** 키 → `REACT_APP_SUPABASE_ANON_KEY`  
-     (보통 `eyJ` 로 시작하는 JWT 형태입니다)
+## 데이터와 권한
 
-## 2. 환경변수 설정
+- `vitamins`: 활성 상품20개. 상품/영양소/상황 공개 조회, 재고 쓰기는 서버 함수 경로.
+- `member_health_profiles`: Auth UUID별 건강정보, authenticated 본인 SELECT/INSERT/UPDATE RLS.
+- `orders.member_user_id`: 신규 Auth 회원 이용내역 연결.
+- `orders.qr_user_identifier`: 전달된 11필드 QR의 식별자 기록. QR 자체를 서명된 인증서로 간주하지 않음.
+- `orders.payment_method='free'`, orders/order_items 금액0. 실제 결제 처리는 없음.
+- `private.kiosk_devices`: 기기 인증값 해시·허용 슬롯.
+- `private.kiosk_requests`: 기기·요청ID·내용 fingerprint·주문 연결, 중복 방지.
+- 이전 `app_users` 등 임시 테이블/기록은 보존하며 웹 직접 접근은 차단.
 
-```bash
-cd frontend
-copy .env.example .env
-```
+브라우저는 키오스크의 로컬 `/api/order`를 호출합니다. 기기 비밀값은 Pi에서만 사용합니다. 구형 place/finish/history RPC의 anon/authenticated 직접 실행 권한은 회수했습니다. QR 해석에는 DB의 issue/resolve_member_qr를 사용하지 않으며 이 함수의 웹 실행 권한도 회수했습니다.
 
-`.env` 예시 (이 프로젝트 URL):
+## 적용 기록
 
-```env
-REACT_APP_SUPABASE_URL=https://nihtftvohyrgegyytfkd.supabase.co
-REACT_APP_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-REACT_APP_USE_SAMPLE_FALLBACK=true
-```
+회원 Auth/RLS, 무료 배출, 11필드 QR 정정은 현재 프로젝트 DB에 이미 적용·시험했습니다. 관련 기록:
 
-> REST API 주소 `.../rest/v1/` 가 아니라 **프로젝트 URL만** 넣습니다.  
-> `https://nihtftvohyrgegyytfkd.supabase.co`
+1. `health-app-web/supabase/member_auth_schema.sql`
+2. `frontend/supabase/free_vending_schema.sql`
+3. `frontend/supabase/compact_qr_correction.sql` — 서버 QR을 철회한 최종 정정
 
-> DB 연동만 검증할 때는 `REACT_APP_USE_SAMPLE_FALLBACK=false` 로 두면  
-> 오류 시 샘플 대신 빈 목록이 나와 문제를 바로 확인할 수 있습니다.
+위 파일은 단일 명령의 신규 DB bootstrap이 아닙니다. 선행 테이블/함수가 필요하고 재실행에 안전하지 않은 구문이 포함됩니다. **기존 DB에 seed.sql이나 과거 권한 SQL을 다시 실행하지 않습니다.** 설치 스크립트는 DB 초기화를 수행하지 않습니다.
 
-## 3. 테이블·시드 데이터 생성
+실제 DB의 무료 주문/재고/회원 내역/중복 방지 시험은 트랜잭션 롤백으로 원래 재고·주문을 보존했습니다. 새 DB로 옮길 때의 통합 bootstrap/마이그레이션 자동화는 별도 작업입니다.
 
-Supabase 대시보드 → **SQL Editor** → New query
+## 환경변수
 
-**처음이거나 예전 `vitamins`만 있던 DB:**
+모바일은 VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY, 키오스크는 REACT_APP_SUPABASE_URL/REACT_APP_SUPABASE_ANON_KEY 공개 키를 사용합니다. Pi 설정 예제는 `deployment/device.example.json`입니다. secret/service_role 키를 웹 변수에 넣지 않습니다.
 
-1. `supabase/migrate_from_v1.sql` (선택, 기존 테이블 삭제)
-2. `supabase/schema.sql` → **Run**
-3. `supabase/seed.sql` → **Run**
-
-### 데이터 구조 (알고리즘 설계 슬라이드 반영)
-
-| 테이블 | 내용 |
-|--------|------|
-| `nutrients` | 영양소 12종 — 목적·주의사항 |
-| `symptom_categories` | 7개 카테고리 (피로, 면역, 눈, …) |
-| `symptoms` | 22개 세부 증상 |
-| `symptom_nutrients` | 증상 → 추천 영양소 매핑 |
-| `vitamins` | 판매 제품 **24종** — 함유량·형태·비고 |
-
-### vitamins 주요 컬럼
-
-| 컬럼 | 설명 |
-|------|------|
-| id | 상품 ID (1~24, 추천·QR 로직과 연동) |
-| nutrient_id | 영양소 FK |
-| name | 제품명 |
-| category | 영양소 표시명 (`nutrients.name`) |
-| price | **1회분 파우치당 가격(원)** |
-| serving_content | 1회 섭취량 함유량 |
-| form | 캡슐 / 정제 / 소프트젤 |
-| remarks | 비고 |
-| stock | 재고 |
-
-## 4. 연결 테스트
-
-```bash
-cd frontend
-npm run db:test
-```
-
-성공 예: `OK — 활성 상품 20건`
-
-## 5. 주문(구매) 기능 — `orders_schema.sql`
-
-상품 seed 이후 **한 번 더** 실행:
-
-1. `supabase/orders_schema.sql` → SQL Editor **Run**
-
-생성되는 것:
-- `orders`, `order_items` 테이블
-- `place_order()` 함수 — 결제 시 주문 저장 + **재고 차감**
-
-앱에서 **구매하기** → Supabase에 주문 기록, 화면에 `주문 #xxxxxxxx` 표시.
-
-```bash
-npm run db:test-order
-```
-
-## 6. 결제 UI — `payment_schema.sql`
-
-주문 테이블 생성 후 **한 번 더** 실행:
-
-1. `supabase/payment_schema.sql` → SQL Editor **Run**
-
-- `orders.payment_method` 컬럼 추가 (`card` / `mobile` / `cash`)
-- 앱 **결제하기** → 수단 선택 → 시뮬레이션 결제 → DB 주문 저장
-
-## 7. 앱 실행
-
-```bash
-npm start
-```
-
-**직접 구매** 화면 상단에  
-- `✓ Supabase DB에서 상품을 불러왔습니다.` → DB 연동 성공  
-- `⚠ 샘플 데이터 사용 중` → `.env` 또는 SQL·RLS 점검
-
-## 자주 나는 오류
-
-| 증상 | 해결 |
-|------|------|
-| `환경변수가 설정되지 않았습니다` | `.env` 생성 후 **개발 서버 재시작** (`npm start`) |
-| `relation "vitamins" does not exist` | `schema.sql` 실행 |
-| `0건` / 빈 목록 | `seed.sql` 실행 |
-| `permission denied` / RLS | `schema.sql` 의 `vitamins_public_read` 정책 확인 |
-| DNS / fetch failed | Project URL이 맞는지, 프로젝트가 일시중지(paused)되지 않았는지 확인 |
-
-## Node 시드 스크립트 (선택)
-
-SQL 대신 API로 넣으려면 **service_role** 키가 필요합니다 (브라우저에 넣지 마세요).
-
-```bash
-# .env.local 에 SUPABASE_SERVICE_ROLE_KEY=... 추가 후
-npm run db:seed
-```
-
-일반적으로는 **SQL Editor에서 seed.sql 실행**을 권장합니다.
+상태와 현장 검증 잔여 항목은 [STATUS.md](../STATUS.md)를 참고합니다.

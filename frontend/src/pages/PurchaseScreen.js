@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import '../styles/PurchaseScreen.css';
 import { getAllVitamins, getLastFetchError } from '../services/vitaminService';
 import { placeOrder } from '../services/orderService';
-import PaymentModal from '../components/PaymentModal';
+import DispenseModal from '../components/DispenseModal';
 import { getQrProfileRules, assessRecommendedProducts } from '../services/recommendationSafety';
 
 export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComplete, onOrderingChange }) {
@@ -35,7 +35,7 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
       const hasRecommendation = Boolean(recommendedCombo);
       setVitamins(data);
       setCategories(hasRecommendation ? ['추천', ...unique] : unique);
-      setActiveCategory(hasRecommendation ? '추천' : unique[0] || null);
+      setActiveCategory(hasRecommendation ? '추천' : data.find(product=>product.dispenser_slot)?.category || unique[0] || null);
       setFetchError(getLastFetchError() || (!data.length ? '표시할 상품이 없습니다.' : null));
       setLoading(false);
     });
@@ -46,9 +46,10 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
   const addToCart = (product) => {
     if (ordering.current || showPayment || safetyExclusions[product.id]) return;
     setCart((prev) => {
+      if(prev.reduce((sum,item)=>sum+item.qty,0)>=5)return prev;
       const existing = prev.find((p) => p.product.id === product.id);
       if (existing) {
-        if (existing.qty >= Math.min(product.stock ?? 100, 100)) return prev;
+        if (existing.qty >= Math.min(product.stock ?? 100, 5)) return prev;
         return prev.map((item) =>
           item.product.id === product.id
             ? { ...item, qty: item.qty + 1 }
@@ -65,23 +66,16 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
 
   const changeCartQty = (productId, delta) => {
     setCart((prev) =>
-      prev
+      delta>0 && prev.reduce((sum,item)=>sum+item.qty,0)>=5 ? prev : prev
         .map((item) =>
-          item.product.id === productId ? { ...item, qty: Math.min(item.product.stock ?? 100, Math.max(1, item.qty + delta)) } : item
+          item.product.id === productId ? { ...item, qty: Math.min(5, item.product.stock ?? 100, Math.max(1, item.qty + delta)) } : item
         )
         .filter((item) => item.qty > 0)
     );
   };
 
-  const cartTotal = () => cart.reduce((s, it) => s + it.product.price * it.qty, 0);
   const recommendationReasons = recommendedCombo?.nutrientExplanations || {};
   const qrRules = recommendedCombo?.qrRules || null;
-
-  const buildRecommendationNote = () => {
-    if (!recommendedCombo) return null;
-    const parts = [recommendedCombo.title, recommendedCombo.selectedSub].filter(Boolean);
-    return parts.join(' · ') || null;
-  };
 
   const openPayment = () => {
     if (cart.length === 0) {
@@ -92,23 +86,21 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
     setShowPayment(true);
   };
 
-  const handlePay = async (paymentMethod) => {
+  const handlePay = async () => {
     if (ordering.current) return { ok: false, message: '주문 처리 중입니다.' };
     ordering.current = true;
     setIsOrdering(true);
     onOrderingChange(true);
     try {
       const result = await placeOrder(cart, {
-        recommendationNote: buildRecommendationNote(),
-        paymentMethod,
-        userId: recommendedCombo?.qrProfile?.id || null,
+        qrProfile: recommendedCombo?.qrData || null,
       });
       if (result.ok) {
         setCart([]);
       }
       return result;
     } catch {
-      return { ok: false, message: '구매 처리 중 오류가 발생했습니다.' };
+      return { ok: false, message: '배출 처리 중 오류가 발생했습니다.' };
     } finally {
       ordering.current = false; setIsOrdering(false); onOrderingChange(false);
     }
@@ -125,24 +117,31 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
       {/* 상단 탭 */}
       <div className="tabs">
         {categories.map((category) => (
-          <div
+          <button
+            type="button"
             key={category}
             className={`tab ${activeCategory === category ? 'active' : ''}`}
             onClick={() => setActiveCategory(category)}
           >
-            {category}
-          </div>
+            {category === '비타민 B-Complex' ? '비타민 B군' : category}
+          </button>
         ))}
       </div>
 
       {/* 제품 영역 */}
+      <div className="purchase-content">
       {loading ? (
         <div className="loading">로딩 중...</div>
       ) : (
         <>
           {activeCategory === '추천' && recommendedCombo && (
             <div className="recommend-info-panel">
-              <h3>맞춤형 추천 안내</h3>
+              <h3>맞춤 추천 · {(recommendedCombo.items || []).length}개 상품</h3>
+              <p className="recommend-brief">식사 보완을 위한 참고 정보입니다. 이용 전 주의사항을 확인해주세요.</p>
+              {!recommendedCombo.items?.length && <p role="status">현재 정보로 자동 추천할 상품이 없습니다. 아래 제외 사유를 확인해주세요.</p>}
+              <details className="recommend-details">
+                <summary>주의사항·추천 근거 보기</summary>
+                <div className="recommend-details-body">
               <p>{recommendedCombo.guidance}</p>
               {(recommendedCombo.warnings || []).map((warning) => <p key={warning}>{warning}</p>)}
               {!recommendedCombo.items?.length && <p role="status">현재 정보로 자동 추천할 상품이 없습니다. 제외 사유를 확인하고 필요한 경우 의사·약사에게 상담해주세요.</p>}
@@ -184,6 +183,8 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
                   </div>
                 ))}
               </div>
+                </div>
+              </details>
             </div>
           )}
 
@@ -206,16 +207,16 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
                     {recommendationReasons[product.category] || '개인별 섭취 필요성을 확인해주세요.'}
                   </div>
                 ) : null}
-                <div className="card-price">{product.price.toLocaleString()}원 / 파우치</div>
+                <div className="card-price">무료 제공</div>
                 {product.stock != null && product.stock <= 10 && (
                   <div className="card-stock">재고 {product.stock}개</div>
                 )}
                 <button
                   className="card-button"
                   onClick={() => addToCart(product)}
-                  disabled={product.stock === 0 || Boolean(safetyExclusions[product.id])}
+                  disabled={product.stock === 0 || Boolean(safetyExclusions[product.id]) || !product.dispenser_slot}
                 >
-                  {product.stock === 0 ? '품절' : safetyExclusions[product.id] ? '상담·성분 확인 필요' : '파우치 담기'}
+                  {product.stock === 0 ? '품절' : safetyExclusions[product.id] ? '상담·성분 확인 필요' : !product.dispenser_slot ? '모터 연결 준비 중' : '파우치 담기'}
                 </button>
                 {safetyExclusions[product.id] && <p className="recommend-excluded">{safetyExclusions[product.id]}</p>}
               </div>
@@ -223,6 +224,8 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
           </div>
         </>
       )}
+
+      </div>
 
       {/* 장바구니 영역 */}
       <div className="bottom-section">
@@ -234,7 +237,7 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
               <div key={item.product.id} className="cart-item">
                 <div className="cart-item-info">
                   <div className="cart-item-name">{item.product.name}</div>
-                  <div className="cart-item-price">{(item.product.price * item.qty).toLocaleString()}원</div>
+
                 </div>
                 <div className="cart-item-controls">
                   <button className="qty-btn small" onClick={() => changeCartQty(item.product.id, -1)}>−</button>
@@ -248,8 +251,8 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
         </div>
 
         <div className="cart-summary">
-          <div className="cart-total-label">합계</div>
-          <div className="cart-total-amount">{cartTotal().toLocaleString()}원</div>
+          <div className="cart-total-label">선택 수량</div>
+          <div className="cart-total-amount">{cart.reduce((sum,item)=>sum+item.qty,0)}개</div>
         </div>
 
         {orderMessage && (
@@ -269,17 +272,16 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
           onClick={openPayment}
           disabled={showPayment || cart.length === 0}
         >
-          결제하기
+          무료 배출
         </button>
       </div>
 
-      <PaymentModal
+      <DispenseModal
         open={showPayment}
         onClose={handlePaymentClose}
         cart={cart}
-        totalAmount={cartTotal()}
         totalQty={cart.reduce((s, it) => s + it.qty, 0)}
-        onPay={handlePay}
+        onDispense={handlePay}
         onComplete={onOrderComplete}
       />
     </div>

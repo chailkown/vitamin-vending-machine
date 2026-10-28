@@ -1,0 +1,11 @@
+{
+  "device_id": "REGISTERED_DEVICE_UUID",
+  "device_token": "PRIVATE_DEVICE_TOKEN_64_HEX",
+  "supabase_url": "https://YOUR_PROJECT_REF.supabase.co",
+  "publishable_key": "YOUR_PUBLISHABLE_KEY",
+  "serial_port": "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0",
+  "durations": {
+    "1": 500,
+    "2": 500
+  }
+}

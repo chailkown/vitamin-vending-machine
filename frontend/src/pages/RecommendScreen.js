@@ -1,17 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import '../styles/RecommendScreen.css';
+import { resolveQrPayload } from '../services/qrResolver';
 import {
   getRecommendationCatalog,
   getRecommendationResult,
-  parseQrPayload,
 } from '../services/recommendationService';
 
 export default function RecommendScreen({ onBack, onGoToPurchase }) {
   const [catalog, setCatalog] = useState([]);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [activeLarge, setActiveLarge] = useState(null);
-  const [activeSub, setActiveSub] = useState(null);
-  const [recMeta, setRecMeta] = useState(null);
 
   const [showConfirm, setShowConfirm] = useState(false);
   const [pendingSub, setPendingSub] = useState(null);
@@ -20,9 +18,6 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
   const [qrInput, setQrInput] = useState('');
   const [qrError, setQrError] = useState('');
 
-  const [recommendedItems, setRecommendedItems] = useState([]);
-  const [showProductDetail, setShowProductDetail] = useState(false);
-  const [productDetail, setProductDetail] = useState(null);
   const mounted = useRef(true);
   const submitting = useRef(false);
   useEffect(() => {
@@ -49,21 +44,6 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
     [catalog]
   );
 
-  useEffect(() => {
-    let cancelled = false;
-    const loadRecommended = async () => {
-      if (!activeSub) {
-        setRecommendedItems([]);
-        setRecMeta(null);
-        return;
-      }
-      const meta = await getRecommendationResult(activeSub);
-      if (!cancelled) { setRecMeta(meta); setRecommendedItems(meta.products); }
-    };
-    loadRecommended();
-    return () => { cancelled = true; };
-  }, [activeSub]);
-
   const buildCombo = async (symptomCode, qrProfile = null) => {
     const { cat, sym } = findSymptomInCatalog(symptomCode);
     const meta = await getRecommendationResult(symptomCode, qrProfile);
@@ -80,7 +60,10 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
 
   const submitQrRecommendation = async () => {
     if (submitting.current) return;
-    const parsed = parseQrPayload(qrInput);
+    submitting.current = true;
+    let parsed;
+    try { parsed = await resolveQrPayload(qrInput); } catch { setQrError('QR 서버에 연결하지 못했습니다.'); submitting.current=false; return; }
+    submitting.current = false;
     if (!parsed.ok) {
       setQrError(parsed.message);
       return;
@@ -92,7 +75,7 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
     setScanMessage('QR 데이터 분석 중...');
     submitting.current = true;
     try {
-      const combo = await buildCombo(pendingSub, parsed.profile);
+      const combo = {...await buildCombo(pendingSub, parsed.profile), qrData:parsed.raw};
       if (mounted.current && typeof onGoToPurchase === 'function') onGoToPurchase(combo);
     } catch {
       if (mounted.current) { setShowConfirm(true); setQrError('추천 데이터를 불러오지 못했습니다. 다시 시도해주세요.'); }
@@ -106,12 +89,14 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
     if (submitting.current) return;
     submitting.current = true;
     setShowConfirm(false);
+    setScanning(true);
+    setScanMessage('추천을 불러오는 중...');
     try {
       const combo = await buildCombo(pendingSub);
       if (mounted.current && typeof onGoToPurchase === 'function') onGoToPurchase(combo);
     } catch {
       if (mounted.current) { setShowConfirm(true); setQrError('추천 데이터를 불러오지 못했습니다.'); }
-    } finally { submitting.current = false; }
+    } finally { submitting.current = false; if (mounted.current) setScanning(false); }
   };
 
   if (catalogLoading) {
@@ -126,150 +111,46 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
     );
   }
 
-  const nutrients = recMeta?.nutrients || [];
-  const explanations = recMeta?.nutrientExplanations || {};
-  const precautions = recMeta?.precautions || {};
-
+  const selectedCategory = catalog.find((category) => category.code === activeLarge);
   return (
     <div className="recommend-screen">
       <div className="rec-header">
         <button className="back-btn" onClick={onBack}>처음으로</button>
         <h2 className="rec-title">맞춤형 추천</h2>
       </div>
-
       <div className="rec-content">
+        <p className="rec-hint">관심 있는 항목을 선택해주세요.</p>
         <div className="large-cats">
-          {catalog.map((c) => (
-            <div key={c.code} className={`large-card ${activeLarge === c.code ? 'active' : ''}`}>
-              <div
-                className="large-card-body rec-main-btn"
-                onClick={() => {
-                  setActiveLarge(activeLarge === c.code ? null : c.code);
-                  setActiveSub(null);
-                }}
-              >
-                <div className="rec-left">
-                  <div className="rec-emoji">{c.emoji}</div>
-                </div>
-                <div className="rec-right">
-                  <div className="large-card-title">{c.title}</div>
-                </div>
-              </div>
-
-              {activeLarge === c.code && (
-                <div className="inline-sub-list">
-                  {c.symptoms.map((sub) => (
-                    <button
-                      key={sub.code}
-                      type="button"
-                      className={`sub-chip ${activeSub === sub.code ? 'selected' : ''}`}
-                      onClick={() => setActiveSub(sub.code)}
-                    >
-                      {sub.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+          {catalog.map((category) => (
+            <button type="button" key={category.code}
+              className={`large-card ${activeLarge === category.code ? 'active' : ''}`}
+              aria-expanded={activeLarge === category.code} aria-controls="sub-selection"
+              onClick={() => setActiveLarge(category.code)}>
+              <span className="rec-emoji" aria-hidden="true">{category.emoji}</span>
+              <span className="large-card-title">{category.title}</span>
+            </button>
           ))}
         </div>
-
-        <div className="sub-area">
-          {!activeSub ? (
-            <div className="sub-empty">식사 보완 또는 증상을 선택해주세요. 근거와 건강정보를 검토하며, 추천할 수 없는 경우에는 상담 안내를 표시합니다.</div>
-          ) : (
-            <div className="detail-box">
-              <div className="detail">
-                <h3>선택한 항목</h3>
-                <p>{findSymptomInCatalog(activeSub).sym?.label}</p>
-                <p className="note">QR 스캔 시 개인 건강 프로필이 추천에 반영됩니다.</p>
-                <p role="status">{recMeta?.guidance}</p>
-                {(recMeta?.warnings || []).map((warning) => <p key={warning} className="note">{warning}</p>)}
-                <div>{(recMeta?.sources || []).map((source) => <p key={source.url}><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a></p>)}</div>
-              </div>
-
-              {nutrients.length > 0 && (
-                <>
-                  <div className="rec-nutrients">
-                    <strong>식사 보완 검토 후보:</strong>
-                    {nutrients.map((n) => (
-                      <span key={n} className="nutrient-chip">{n}</span>
-                    ))}
-                  </div>
-
-                  <div className="rec-explanations">
-                    {nutrients.map((n) => (
-                      <div key={n} className="rec-explain-item">
-                        <strong>{n}:</strong> {explanations[n] || '설명 준비 중'}
-                      </div>
-                    ))}
-                  </div>
-
-                  {nutrients.some((n) => precautions[n]) && (
-                    <div className="rec-precautions">
-                      <strong>주의사항</strong>
-                      {nutrients.filter((n) => precautions[n]).map((n) => (
-                        <div key={n} className="rec-precaution-item">
-                          <strong>{n}:</strong> {precautions[n]}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-
-              {recommendedItems.length > 0 && (
-                <div className="rec-products">
-                  {recommendedItems.map((prod) => (
-                    <div key={prod.id} className="rec-card">
-                      <div className="rec-card-image">
-                        <img src={prod.image_url || 'https://via.placeholder.com/120'} alt={prod.name} />
-                      </div>
-                      <div className="rec-card-name">{prod.name}</div>
-                      <div className="rec-card-meta">{prod.form} · {prod.serving_content}</div>
-                      <div className="rec-card-desc">{prod.remarks || prod.description}</div>
-                      <div className="rec-card-price">
-                        {prod.price ? `${prod.price.toLocaleString()}원` : ''}
-                      </div>
-                      <div className="rec-card-actions">
-                        <button
-                          type="button"
-                          className="detail-btn"
-                          onClick={() => {
-                            setProductDetail(prod);
-                            setShowProductDetail(true);
-                          }}
-                        >
-                          상세보기
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div style={{ marginTop: 12, textAlign: 'center' }}>
-                <button
-                  type="button"
-                  className="confirm-yes"
-                  onClick={() => {
-                    setPendingSub(activeSub);
-                    setShowConfirm(true);
-                  }}
-                >
-                  건강정보 반영·결과 보기
-                </button>
-              </div>
+        {selectedCategory && (
+          <section id="sub-selection" className="sub-selection" aria-label="세부 상황">
+            <h3>{selectedCategory.title}</h3>
+            <p className="rec-hint">세부 상황을 누르면 다음 단계로 이동합니다.</p>
+            <div className="sub-list">
+              {selectedCategory.symptoms.map((symptom) => (
+                <button type="button" key={symptom.code} className="sub-btn" onClick={() => {
+                  setPendingSub(symptom.code); setQrInput(''); setQrError(''); setShowConfirm(true);
+                }}>{symptom.label}</button>
+              ))}
             </div>
-          )}
-        </div>
+          </section>
+        )}
       </div>
 
       {showConfirm && (
         <div className="overlay">
-          <div className="confirm-modal qr-input-modal">
+          <div className="confirm-modal qr-input-modal" role="dialog" aria-modal="true" aria-labelledby="qr-title">
             <div className="confirm-body">
-              <h3>QR을 스캔하시겠습니까?</h3>
+              <h3 id="qr-title">건강정보 QR을 사용하시겠습니까?</h3>
               <p className="qr-input-help">앱 QR로 질환·약물·알레르기를 검토합니다. QR 없이 진행하면 일반 정보만 제공하며 개인별 안전성을 확인할 수 없습니다.</p>
               <textarea
                 className="qr-input"
@@ -290,16 +171,17 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
                 className="confirm-yes"
                 onClick={submitQrRecommendation}
               >
-                예
+                QR 반영
               </button>
               <button
                 type="button"
                 className="confirm-no"
                 onClick={continueWithoutQr}
               >
-                아니요
+                QR 없이 계속
               </button>
             </div>
+            <button className="confirm-back" onClick={() => setShowConfirm(false)}>다시 선택</button>
           </div>
         </div>
       )}
@@ -319,47 +201,6 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
         </div>
       )}
 
-      {showProductDetail && productDetail && (
-        <div className="overlay">
-          <div className="confirm-modal product-detail-modal">
-            <div className="product-detail-layout">
-              <div className="product-detail-image">
-                <img
-                  src={productDetail.image_url || 'https://via.placeholder.com/120'}
-                  alt={productDetail.name}
-                />
-              </div>
-              <div className="product-detail-body">
-                <h3>{productDetail.name}</h3>
-                <p className="product-detail-category">{productDetail.category}</p>
-                <p><strong>함유량:</strong> {productDetail.serving_content}</p>
-                <p><strong>형태:</strong> {productDetail.form}</p>
-                <p><strong>비고:</strong> {productDetail.remarks}</p>
-                {productDetail.nutrient_precautions && (
-                  <p className="product-detail-warning">
-                    <strong>주의:</strong> {productDetail.nutrient_precautions}
-                  </p>
-                )}
-                <div className="product-detail-price">
-                  {productDetail.price ? `${productDetail.price.toLocaleString()}원` : ''}
-                </div>
-              </div>
-            </div>
-            <div style={{ marginTop: 18, textAlign: 'right' }}>
-              <button
-                type="button"
-                className="confirm-no"
-                onClick={() => {
-                  setShowProductDetail(false);
-                  setProductDetail(null);
-                }}
-              >
-                닫기
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -92,7 +92,7 @@ const useSample = (reason, items = SAMPLE_VITAMINS) => {
 };
 
 const VITAMIN_COLUMNS =
-  'id, nutrient_id, name, category, price, serving_content, form, remarks, image_url, description, stock, is_active, allergen_verified, allergen_codes, allergen_source_url, allergen_checked_at, nutrients ( code, name, purpose, precautions )';
+  'id, nutrient_id, name, category, price, serving_content, form, remarks, image_url, description, stock, dispenser_slot, is_active, allergen_verified, allergen_codes, allergen_source_url, allergen_checked_at, nutrients ( code, name, purpose, precautions )';
 
 /**
  * Supabase 연결 및 vitamins 테이블 조회 테스트

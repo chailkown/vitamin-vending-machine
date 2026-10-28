@@ -1,14 +1,11 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import './App.css';
 import { createQrDataUrl } from './services/qrImage';
-import { toKioskProfile } from './services/qrProfile';
+import { toKioskProfile, validateQrProfile, serializeQrProfile } from './services/qrProfile';
 import healthCatalog from './services/healthCatalog.json';
-import { getProfileStorageKey, loadUserProfile, saveUserProfile } from './services/profileStorage';
+import { authClient, requireAuthClient, memberSession, authErrorMessage, authenticateMember, verifySignupLink } from './services/authClient';
 import {
-  createAppUser,
   deleteVendingMachine,
-  findAppAdmin,
-  findAppUser,
   getHealthProfile,
   getPurchaseHistory,
   getVendingMachines,
@@ -19,9 +16,6 @@ import {
   saveVendingMachine,
 } from './services/healthDb';
 
-const USERS_KEY = 'health-app-users-v1';
-const SESSION_KEY = 'health-app-session-v1';
-const KIOSK_PROFILE_KEY = 'health-app-kiosk-profile-v1';
 const VENDING_MACHINES_KEY = 'health-app-vending-machines-v1';
 const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY?.trim() || '';
 const KAKAO_MAP_SDK_URL = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(KAKAO_MAP_KEY)}&autoload=false&libraries=services`;
@@ -159,6 +153,7 @@ const loadKakaoMapSdk = () => new Promise((resolve, reject) => {
 const validateHealthInfo = (profile) => {
   const missing = REQUIRED_FIELDS.some((key) => !String(profile[key] ?? '').trim());
   if (missing) return '건강정보를 모두 입력해야 이용할 수 있습니다.';
+  if((profile.conditions||[]).length!==1 || String(profile.allergies).split(',').filter(v=>v.trim()).length!==1 || String(profile.medications).split(',').filter(v=>v.trim()).length!==1)return '기저질환·알레르기·복용 약물을 각각 하나씩 선택해주세요.';
   if (profile.name.length > 100) return '이름은 100자 이내로 입력해주세요.';
 
   const age = Number(profile.age);
@@ -175,23 +170,20 @@ function App() {
   const sessionEpoch = useRef(0);
   const saveTimer = useRef(null);
   const authPending = useRef(false);
+  const currentMember = useRef(null);
+  const [authBusy, setAuthBusy] = useState(false);
   const savePending = useRef(false);
   const [isSaving, setIsSaving] = useState(false);
   useEffect(() => () => { sessionEpoch.current += 1; clearTimeout(saveTimer.current); }, []);
-  const [users, setUsers] = useState(() => loadJson(USERS_KEY, []));
-  const [session, setSession] = useState(() => loadJson(SESSION_KEY, null));
+  const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(!authClient);
+  const [lastSavedProfile, setLastSavedProfile] = useState('');
   const [authMode, setAuthMode] = useState('login');
   const [authForm, setAuthForm] = useState({ name: '', userId: '', password: '' });
   const [authError, setAuthError] = useState('');
-  const [screen, setScreen] = useState(() => {
-    const currentSession = loadJson(SESSION_KEY, null);
-    if (!currentSession) return 'auth';
-    return currentSession.isAdmin ? 'admin' : validateHealthInfo(loadUserProfile(localStorage, currentSession.userId, DEFAULT_PROFILE)) ? 'health' : 'home';
-  });
-  const [profile, setProfile] = useState(() => {
-    const currentSession = loadJson(SESSION_KEY, null);
-    return loadUserProfile(localStorage, currentSession?.userId, DEFAULT_PROFILE);
-  });
+  const [confirmationLink,setConfirmationLink]=useState('');
+  const [screen, setScreen] = useState('auth');
+  const [profile, setProfile] = useState(() => ({...DEFAULT_PROFILE}));
   const [savedNotice, setSavedNotice] = useState('');
   const [healthError, setHealthError] = useState('');
   const [qrRefresh, setQrRefresh] = useState(0);
@@ -212,22 +204,7 @@ function App() {
   const [medicationMode, setMedicationMode] = useState(() =>
     MEDICATION_OPTIONS.includes(profile.medications) ? profile.medications : '직접 입력'
   );
-  const [needsHealthSetup, setNeedsHealthSetup] = useState(() => {
-    const currentSession = loadJson(SESSION_KEY, null);
-    return Boolean(currentSession && !currentSession.isAdmin && validateHealthInfo(loadUserProfile(localStorage, currentSession.userId, DEFAULT_PROFILE)));
-  });
-
-  useEffect(() => {
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
-  }, [users]);
-
-  useEffect(() => {
-    if (session) {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    } else {
-      localStorage.removeItem(SESSION_KEY);
-    }
-  }, [session]);
+  const [needsHealthSetup, setNeedsHealthSetup] = useState(false);
 
   useEffect(() => {
     localStorage.setItem(VENDING_MACHINES_KEY, JSON.stringify(vendingMachines));
@@ -255,43 +232,33 @@ function App() {
       ? (session ? 'home' : 'auth')
       : screen;
 
-  const kioskProfile = useMemo(
-    () => toKioskProfile(profile, session?.userId),
-    [profile, session?.userId]
-  );
-
-  const qrPayload = useMemo(
-    () => JSON.stringify(kioskProfile),
-    [kioskProfile]
-  );
-
   useEffect(() => {
     if (activeScreen !== 'qr') return;
     let cancelled = false;
-    createQrDataUrl(qrPayload).then((url) => {
+    Promise.resolve().then(()=>serializeQrProfile(toKioskProfile(profile,session.userId))).then(createQrDataUrl).then((url) => {
       if (!cancelled) { setQrImage(url); setQrError(''); }
     }).catch((error) => {
       if (!cancelled) { setQrImage(''); setQrError(error.message); }
     });
     return () => { cancelled = true; };
-  }, [activeScreen, qrPayload, qrRefresh]);
+  }, [activeScreen, qrRefresh, profile, session?.userId]);
 
-  const historyPassword = users.find((user) => user.userId === session?.userId)?.password;
   useEffect(() => {
     if (activeScreen !== 'history' || !session?.userId) return;
     let cancelled = false;
-    getPurchaseHistory(session.userId, historyPassword).then((rows) => {
+    getPurchaseHistory(session.userId).then((rows) => {
       if (!cancelled) { setPurchaseHistory(rows); setHistoryError(''); }
     }).catch((error) => {
       if (!cancelled) { setPurchaseHistory([]); setHistoryError(error.message); }
     }).finally(() => { if (!cancelled) setHistoryLoading(false); });
     return () => { cancelled = true; };
-  }, [activeScreen, session?.userId, historyPassword, historyRefresh]);
+  }, [activeScreen, session?.userId, historyRefresh]);
 
   const openHistory = () => {
     setPurchaseHistory([]); setHistoryError(''); setHistoryLoading(true); setScreen('history');
   };
   const openQr = () => {
+    if (lastSavedProfile !== JSON.stringify(profile)) { setHealthError('변경한 건강정보를 먼저 저장해주세요.'); setScreen('health'); return; }
     setQrImage(''); setQrError(''); setScreen('qr');
   };
 
@@ -404,125 +371,104 @@ function App() {
     setProfile((prev) => ({ ...prev, [key]: value }));
   };
 
-  const getProfileKey = getProfileStorageKey;
-
-  const startAdminSession = (user) => {
-    sessionEpoch.current += 1;
-    setSession({ userId: user.userId, name: user.name, isAdmin: true });
-    setNeedsHealthSetup(false);
-    setMachineNotice('');
-    setScreen('admin');
-  };
-
-  const startSession = async (user, forceHealthSetup = false) => {
+  const startSession = async (user) => {
     const epoch = ++sessionEpoch.current;
-    let userProfile = loadJson(getProfileKey(user.userId), null);
-    let nextProfile = userProfile ? { ...DEFAULT_PROFILE, ...userProfile } : { ...DEFAULT_PROFILE, name: user.name };
-    let needsSetup = forceHealthSetup || !userProfile;
-
-    if (isHealthDbConfigured) {
-      try {
-        const dbProfile = await getHealthProfile(user.userId);
-        if (dbProfile) {
-          nextProfile = mapDbProfileToAppProfile(dbProfile, { ...DEFAULT_PROFILE, name: user.name });
-          userProfile = nextProfile;
-          needsSetup = Boolean(validateHealthInfo(nextProfile));
-          localStorage.setItem(getProfileKey(user.userId), JSON.stringify(nextProfile));
-        } else if (!forceHealthSetup) {
-          needsSetup = true;
-        }
-      } catch {
-        // DB 조회가 실패해도 로컬 저장값으로 계속 진행합니다.
-      }
-    }
-
+    currentMember.current = user.userId;
+    const dbProfile = await getHealthProfile(user.userId);
     if (epoch !== sessionEpoch.current) return;
-    needsSetup = needsSetup || Boolean(validateHealthInfo(nextProfile));
+    const nextProfile = mapDbProfileToAppProfile(dbProfile, {...DEFAULT_PROFILE, name:user.name});
+    const needsSetup = !dbProfile || Boolean(validateHealthInfo(nextProfile));
     setProfile(nextProfile);
+    setLastSavedProfile(dbProfile ? JSON.stringify(nextProfile) : '');
     setAllergyMode(ALLERGY_OPTIONS.includes(nextProfile.allergies) ? nextProfile.allergies : '직접 입력');
     setMedicationMode(MEDICATION_OPTIONS.includes(nextProfile.medications) ? nextProfile.medications : '직접 입력');
-    setSession({ userId: user.userId, name: user.name, needsHealthSetup: needsSetup });
+    setSession({...user, needsHealthSetup:needsSetup});
     setNeedsHealthSetup(needsSetup);
     setScreen(needsSetup ? 'health' : 'home');
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    // Discard the legacy plaintext account list; it is never an authentication source.
+    localStorage.removeItem('health-app-users-v1');
+    localStorage.removeItem('health-app-session-v1');
+    if (!authClient) return undefined;
+    const {data: {subscription}} = authClient.auth.onAuthStateChange((event, nextSession) => {
+      if (event === 'SIGNED_IN' && !authPending.current && currentMember.current && nextSession?.user.id !== currentMember.current && !cancelled) {
+        sessionEpoch.current += 1; currentMember.current = null;
+        clearTimeout(saveTimer.current); savePending.current = false; setIsSaving(false);
+        setSession(null); setProfile({...DEFAULT_PROFILE}); setLastSavedProfile('');
+        setQrImage(''); setPurchaseHistory([]); setScreen('auth');
+        setAuthError('다른 창에서 계정이 변경되었습니다. 다시 로그인해주세요.');
+      }
+      if (event === 'SIGNED_OUT' && !cancelled) {
+        currentMember.current = null;
+        sessionEpoch.current += 1;
+        clearTimeout(saveTimer.current); savePending.current = false; setIsSaving(false);
+        setSession(null); setProfile({...DEFAULT_PROFILE}); setLastSavedProfile('');
+        setQrImage(''); setPurchaseHistory([]); setScreen('auth');
+      }
+    });
+    (async () => {
+      try {
+        const {data:{session:existing}, error} = await authClient.auth.getSession();
+        if (error) throw error;
+        if (existing) {
+          const {data:{user},error:userError} = await authClient.auth.getUser();
+          if (userError) throw userError;
+          if (user && !cancelled) await startSession(memberSession(user));
+        }
+      } catch (error) { if (!cancelled) setAuthError(authErrorMessage(error)); }
+      finally { if (!cancelled) setAuthReady(true); }
+    })();
+    return () => { cancelled = true; subscription.unsubscribe(); sessionEpoch.current += 1; };
+    // Initialization and subscription run once; explicit login loads its own profile.
+  }, []);
 
   const handleAuthSubmit = async (event) => {
     event.preventDefault();
     if (authPending.current) return;
     authPending.current = true;
-    try {
+    setAuthBusy(true);
     setAuthError('');
-
-    const userId = authForm.userId.trim();
-    const password = authForm.password.trim();
-    const name = authForm.name.trim();
-
-    if (!userId || !password || (authMode === 'signup' && !name)) {
-      setAuthError('필수 항목을 입력해주세요.');
-      return;
-    }
-    if (userId.length > 100 || name.length > 100) { setAuthError('이름과 아이디는 100자 이내로 입력해주세요.'); return; }
-
-    if (authMode === 'signup') {
-      try {
-        if (isHealthDbConfigured) {
-          const existing = await findAppUser(userId);
-          if (existing) {
-            setAuthError('이미 가입된 아이디입니다.');
-            return;
-          }
-          await createAppUser({ userId, password, name });
-        } else if (users.some((user) => user.userId === userId)) {
-          setAuthError('이미 가입된 아이디입니다.');
-          return;
-        }
-      } catch {
-        if (users.some((user) => user.userId === userId)) {
-          setAuthError('이미 가입된 아이디입니다.');
-          return;
-        }
+    try {
+      const email = authForm.userId.trim().toLowerCase();
+      const password = authForm.password;
+      const name = authForm.name.trim();
+      if (!email || !password || (authMode === 'signup' && !name)) throw new Error('필수 항목을 입력해주세요.');
+      if (name.length > 100) throw new Error('이름은 100자 이내로 입력해주세요.');
+      if (authMode === 'signup' && password.length < 8) throw new Error('비밀번호는 8자 이상으로 입력해주세요.');
+      const data = await authenticateMember({mode:authMode,email,password,name});
+      setAuthForm((prev) => ({...prev,password:''}));
+      if (!data.session) {
+        setAuthMode('login');
+        setAuthError('가입 요청을 접수했습니다. 이메일의 인증 링크를 누른 뒤 이 화면에서 로그인해주세요. 이미 가입했다면 기존 비밀번호로 로그인해주세요.');
+        return;
       }
-
-      const newUser = { userId, password, name };
-      setUsers((prev) => (prev.some((user) => user.userId === userId) ? prev : [...prev, newUser]));
-      await startSession(newUser, true);
-      return;
-    }
-
-    let found = users.find((user) => user.userId === userId && user.password === password);
-    let isAdminLogin = userId === 'admin';
-    if (isHealthDbConfigured) {
-      try {
-        const dbUser = await findAppUser(userId);
-        if (dbUser && dbUser.password === password) {
-          found = { userId: dbUser.user_id, password: dbUser.password, name: dbUser.name };
-          setUsers((prev) => [...prev.filter((user) => user.userId !== found.userId), found]);
-          isAdminLogin = Boolean(await findAppAdmin(userId));
-        }
-      } catch {
-        // DB 로그인이 실패해도 로컬 계정으로 확인합니다.
-      }
-    }
-
-    if (!found) {
-      setAuthError('아이디 또는 비밀번호가 맞지 않습니다.');
-      return;
-    }
-    if (isAdminLogin) {
-      startAdminSession(found);
-      return;
-    }
-    await startSession(found, false);
-    } finally { authPending.current = false; }
+      await startSession(memberSession(data.user));
+    } catch (error) { setAuthError(authErrorMessage(error)); }
+    finally { authPending.current = false; setAuthBusy(false); }
   };
 
-  const logout = () => {
+  const confirmEmail = async () => {
+    if(authPending.current)return;authPending.current=true;setAuthBusy(true);setAuthError('');
+    try {const data=await verifySignupLink(confirmationLink);setConfirmationLink('');await startSession(memberSession(data.user));}
+    catch(error){setAuthError(authErrorMessage(error));}
+    finally{authPending.current=false;setAuthBusy(false);}
+  };
+
+  const logout = async () => {
+    try {
+      const {error} = await requireAuthClient().auth.signOut({scope:'local'});
+      if (error) throw error;
+    } catch (error) { setHealthError(authErrorMessage(error)); return; }
     sessionEpoch.current += 1;
     clearTimeout(saveTimer.current);
     savePending.current = false;
     setIsSaving(false);
     setSession(null);
     setProfile({ ...DEFAULT_PROFILE });
+    setLastSavedProfile('');
     setPurchaseHistory([]);
     setHistoryError('');
     setQrImage('');
@@ -535,15 +481,7 @@ function App() {
     setScreen('auth');
   };
 
-  const toggleDisease = (disease) => {
-    setProfile((prev) => {
-      const current = prev.conditions?.filter((item) => item !== '해당 없음') || [];
-      const next = current.includes(disease)
-        ? current.filter((item) => item !== disease)
-        : [...current, disease];
-      return { ...prev, conditions: next.length ? next : ['해당 없음'] };
-    });
-  };
+  const toggleDisease=(disease)=>updateProfile('conditions',[disease]);
 
   const updateChoiceOption = (type, value) => {
     const config = CHOICE_SCREEN_CONFIG[type];
@@ -555,9 +493,7 @@ function App() {
     if (value === '직접 입력') {
       return;
     }
-    const selected = String(profile[config.field] || '').split(',').map((item) => item.trim()).filter((item) => item && item !== '해당 없음');
-    const next = value === '해당 없음' ? [] : selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value];
-    updateProfile(config.field, next.length ? next.join(', ') : '해당 없음');
+    updateProfile(config.field,value);
   };
 
   const saveHealthInfo = async () => {
@@ -572,27 +508,22 @@ function App() {
     savePending.current = true;
     setIsSaving(true);
     try {
-    saveUserProfile(localStorage, session.userId, profile);
-    localStorage.setItem(`${KIOSK_PROFILE_KEY}-${session.userId}`, JSON.stringify(toKioskProfile(profile, session.userId)));
-    if (isHealthDbConfigured) {
-      try {
-        await saveHealthProfile({
-          userId: session.userId,
-          profile,
-          kioskPayload: toKioskProfile(profile, session.userId),
-        });
-      } catch {
-        if (epoch !== sessionEpoch.current) return;
-        setSavedNotice('이 기기에 저장했습니다. 클라우드 저장에 실패해 다른 기기에서는 보이지 않을 수 있습니다.');
-        setHealthError('클라우드 연결을 확인하고 다시 저장해주세요.');
-        return;
-      }
+    try {
+      if (!isHealthDbConfigured) throw new Error('서버 연결 설정이 없습니다.');
+      validateQrProfile(toKioskProfile(profile, session.userId));
+      await saveHealthProfile({userId:session.userId,profile,kioskPayload:toKioskProfile(profile,session.userId)});
+    } catch (error) {
+      if (epoch !== sessionEpoch.current) return;
+      setSavedNotice('');
+      setHealthError(`DB 저장에 실패했습니다. ${authErrorMessage(error)}`);
+      return;
     }
     if (epoch !== sessionEpoch.current) return;
     const nextSession = { ...session, name: profile.name, needsHealthSetup: false };
     setSession(nextSession);
     setNeedsHealthSetup(false);
-    setSavedNotice('저장되었습니다');
+    setLastSavedProfile(JSON.stringify(profile));
+    setSavedNotice('DB에 저장되었습니다');
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       if (epoch !== sessionEpoch.current) return;
@@ -676,6 +607,8 @@ function App() {
     }
   };
 
+  if (!authReady) return <main className="app-bg"><p role="status">로그인 상태를 확인하고 있습니다...</p></main>;
+
   return (
     <main className="app-bg">
       <div className="phone-frame">
@@ -722,11 +655,11 @@ function App() {
                 </label>
               )}
               <label className="auth-field">
-                아이디
+                이메일
                 <input
                   value={authForm.userId}
                   onChange={(event) => setAuthForm((prev) => ({ ...prev, userId: event.target.value }))}
-                  placeholder="아이디"
+                  type="email" autoComplete="email" required placeholder="example@email.com"
                 />
               </label>
               <label className="auth-field">
@@ -735,15 +668,19 @@ function App() {
                   type="password"
                   value={authForm.password}
                   onChange={(event) => setAuthForm((prev) => ({ ...prev, password: event.target.value }))}
-                  placeholder="비밀번호"
+                  autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} required minLength={authMode === 'signup' ? 8 : undefined} placeholder="비밀번호 (가입 시 8자 이상)"
                 />
               </label>
 
               {authError && <p className="form-error">{authError}</p>}
-              <button className="auth-submit" type="submit">
-                {authMode === 'login' ? '로그인' : '회원가입'}
+              <button className="auth-submit" type="submit" disabled={authBusy}>
+                {authBusy ? '연결 중...' : authMode === 'login' ? '로그인' : '회원가입'}
               </button>
             </form>
+            <details className="email-confirm-help"><summary>이메일 인증 후 화면이 열리지 않나요?</summary><p>아직 열지 않은 인증 메일의 버튼 링크를 복사해 여기에 붙여넣으면 이 화면에서 인증할 수 있습니다. 이미 인증했다면 이메일로 로그인해주세요.</p>
+              <label>인증 링크<input type="url" value={confirmationLink} onChange={(event)=>setConfirmationLink(event.target.value)} autoComplete="off" /></label>
+              <button type="button" onClick={confirmEmail} disabled={authBusy||!confirmationLink}>이메일 인증 완료</button>
+            </details>
           </section>
         )}
 
@@ -977,34 +914,36 @@ function App() {
                 onClick={() => {
                   setQrImage(''); setQrError(''); setQrRefresh((value) => value + 1);
                 }}
-                aria-label="QR 새로고침"
+                aria-label="QR 다시 표시"
               >
                 <span aria-hidden="true">↻</span>
               </button>
-              <p>시간 제한 없이 재사용할 수 있습니다. 건강정보를 수정하면 QR에 반영됩니다.</p>
+              <p>시간 제한 없이 사용할 수 있는 건강정보 QR입니다. 기저질환·알레르기·복용 약물은 각각 한 가지 코드로 전달합니다.</p>
               <div className="qr-image-wrap">
                 {qrError ? <p role="alert">{qrError}</p>
                   : qrImage ? <img className="qr-image" src={qrImage} alt="키오스크 전달용 건강정보 QR코드" /> : <p>QR 생성 중...</p>}
               </div>
+              {qrImage && <a className="primary-btn qr-download" href={qrImage} download="vitamin-health-qr.png">QR 이미지 저장</a>}
+              <p className="qr-scan-help">스캐너가 인식하지 못하면 화면 밝기를 높여주세요. 한글 입력은 영문 모드로 전환해주세요.</p>
             </section>
           </>
         )}
 
         {activeScreen === 'history' && (
           <>
-            <Header title="내 구매 내역" eyebrow="구매 기록" onBack={() => setScreen('home')} />
+            <Header title="내 이용 내역" eyebrow="배출 기록" onBack={() => setScreen('home')} />
             <section className="history-panel">
               <button className="primary-btn" type="button" disabled={historyLoading} onClick={() => {
                 setPurchaseHistory([]); setHistoryError(''); setHistoryLoading(true); setHistoryRefresh((value) => value + 1);
               }}>새로고침</button>
-              {historyLoading ? <p role="status">구매 기록을 불러오는 중...</p>
+              {historyLoading ? <p role="status">배출 기록을 불러오는 중...</p>
                 : historyError ? <p className="form-error" role="alert">{historyError}</p>
-                  : purchaseHistory.length === 0 ? <p>완료된 구매 내역이 없습니다.</p>
+                  : purchaseHistory.length === 0 ? <p>완료된 이용 내역이 없습니다.</p>
                     : purchaseHistory.map((order) => (
                       <article className="history-order" key={order.id}>
                         <time>{new Date(order.completed_at || order.created_at).toLocaleString('ko-KR')}</time>
-                        {(order.order_items || []).map((item) => <p key={item.id}>{item.product_name} × {item.quantity} 파우치 · {item.line_total.toLocaleString()}원</p>)}
-                        <strong>총 {order.total_amount.toLocaleString()}원 · {order.is_simulated ? '시연 완료' : '구매 완료'}</strong>
+                        {(order.order_items || []).map((item) => <p key={item.id}>{item.product_name} × {item.quantity} 파우치</p>)}
+                        <strong>총 {order.total_qty}개 · 무료 배출 완료</strong>
                       </article>
                     ))}
             </section>
@@ -1035,12 +974,12 @@ function App() {
 
         {activeScreen !== 'auth' && !session?.isAdmin && !needsHealthSetup && (
         <footer className="bottom-nav">
-          <button type="button" onClick={openHistory} aria-label="구매내역">
+          <button type="button" onClick={openHistory} aria-label="이용내역">
             <svg className="nav-history" viewBox="0 0 40 44" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M8 3h24v38l-6-4-6 4-6-4-6 4V3Z" />
               <path d="M14 13h12M14 21h12M14 29h8" />
             </svg>
-            <small>구매내역</small>
+            <small>이용내역</small>
           </button>
           <button type="button" onClick={() => setScreen('home')} aria-label="홈">
             <span className="nav-home" aria-hidden="true" />
