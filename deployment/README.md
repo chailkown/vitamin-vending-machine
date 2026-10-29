@@ -2,16 +2,18 @@
 
 # Pi 배포와 현재 적용 상태
 
+2026-10-29 최신 묶음은 `.deploy/connected-20261029.zip`이다. [설치·집에서 시험 순서](../HOME_TEST_2026-10-29.md)를 우선한다. 구매내역 연결 DB는 이미 적용했고, Pi에는 이 묶음의 서버와 두 웹을 함께 설치해야 한다.
+
 최신 코드·DB와 최신 Pi 런타임 설치는 별도입니다. **최신 패키지의 Pi 설치/통합 실물 검증은 아직 완료하지 않았습니다.** 현재 서비스는 같은 공유기에서 사용하는 구성이고 외부 도메인은 필요하지 않습니다.
 
 ## 기존에 준비한 로컬 패키지 사용
 
-현재 작업 컴퓨터의 `outputs/free_vending_update`에는 두 웹 빌드·Python 서버·해당 기기의 비밀 설정이 준비돼 있습니다. 이 폴더 자체는 Git에 올리지 않습니다.
+2026-10-29 최신 업데이트는 `.deploy/connected-20261029/`와 같은 이름의 zip입니다. 두 웹 빌드·Python 서버·20모터/DHT22 펌웨어를 포함합니다. 이 로컬 묶음은 Git에 없으므로 다른 PC에서는 아래 명령으로 다시 만듭니다. 비밀 설정은 포함하지 않으며 설치된 Pi의 기존 device.json을 사용합니다. 전체 안내: [소프트웨어 인계](../SOFTWARE_HANDOFF.md).
 
 Windows CMD에서 해당 폴더를 SCP로 Pi 홈에 전송한 뒤 Pi SSH 창에서:
 
 ```bash
-bash ~/free_vending_update/install.sh
+bash ~/connected-20261029/install.sh
 ```
 
 먼저 기존 3000/3001 웹과 9000 모터 시험 서버 실행 창을 종료합니다. 9000은 USB를 점유합니다. python3-serial, dialout 권한이 필요하며 설치 스크립트가 확인합니다. DB SQL은 자동 재실행하지 않습니다.
@@ -35,10 +37,10 @@ cd ../frontend
 npm ci --legacy-peer-deps
 npm run build
 cd ..
-python3 deployment/package.py --device-config /private/path/device.json
+python3 deployment/package.py --output .deploy/my-update
 ```
 
-결과는 Git 무시 경로 `.deploy/free_vending_update/`입니다. 이를 Pi 홈으로 전송하고 `install.sh` 실행. 기기 설정은 `deployment/device.example.json`을 참고하되 예제는 실행 가능한 인증값이 아닙니다. 기존 기기의 비밀 설정은 별도 로컬 패키지 또는 설치된 Pi에 보관되어 있으며 Git에서 복원되지 않습니다. 새 기기는 DB에 인증값의 해시와 허용 슬롯을 등록해야 합니다. 등록 권한을 웹에 부여하지 않습니다.
+결과를 Pi 홈으로 전송하고 `install.sh` 실행. 출력 폴더는 비어 있어야 합니다. 기존 기기 인증과 교정값/journal을 보존하고 빠진 모터 시간은 500ms로 채웁니다. 최초 설치라면 `--device-config /private/path/device.json`으로 발급된 인증 설정을 포함할 수 있습니다. 이 경우 패키지를 공개하지 않습니다. 예제 JSON은 실제 인증값이 아닙니다. 새 기기 등록은 별도 관리자 작업입니다.
 
 ## 자동 시작·상태·시간
 

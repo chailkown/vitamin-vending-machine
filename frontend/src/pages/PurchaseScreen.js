@@ -15,36 +15,59 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
   const [showPayment, setShowPayment] = useState(false);
   const [orderMessage, setOrderMessage] = useState(null);
   const [isOrdering, setIsOrdering] = useState(false);
+  const [dispenseResult, setDispenseResult] = useState(null);
   const ordering = useRef(false);
+  const refreshInventory = useRef(() => {});
   const safetyExclusions = useMemo(() => {
     const profile = recommendedCombo?.qrProfile;
-    if (!profile) return {};
-    const result = assessRecommendedProducts(vitamins, profile, getQrProfileRules(profile));
-    return Object.fromEntries(result.excluded.map((p) => [p.id, p.reason]));
+    const result = assessRecommendedProducts(vitamins, profile, profile ? getQrProfileRules(profile) : null);
+    const excluded = Object.fromEntries(result.excluded.map((p) => [p.id, p.reason]));
+    for (const product of recommendedCombo?.productExclusions || []) excluded[product.id] = product.reason;
+    if (recommendedCombo?.hold) for (const product of vitamins) excluded[product.id] ||= '현재 상황·건강조건에서는 자동 추천·배출을 보류합니다.';
+    return excluded;
   }, [vitamins, recommendedCombo]);
   const products = useMemo(() => activeCategory === '추천'
-    ? vitamins.filter((product) => recommendedCombo?.items?.includes(product.id))
+    ? vitamins.filter((product) => (recommendedCombo?.relatedItems || recommendedCombo?.items)?.includes(product.id))
     : vitamins.filter((product) => product.category === activeCategory), [vitamins, activeCategory, recommendedCombo]);
 
   // 초기 로드: 카테고리 및 제품 조회
   useEffect(() => {
-    let cancelled = false;
-    getAllVitamins().then((data) => {
-      if (cancelled) return;
+    let cancelled = false, fetching = false, initial = true;
+    const refresh = async () => {
+      if (cancelled || fetching || ordering.current) return;
+      fetching = true;
+      try {
+      const data = await getAllVitamins();
+      if (cancelled || ordering.current) return;
+      const error = getLastFetchError();
+      if (error) { setFetchError(error); return; }
       const unique = [...new Set(data.map((product) => product.category))];
       const hasRecommendation = Boolean(recommendedCombo);
       setVitamins(data);
       setCategories(hasRecommendation ? ['추천', ...unique] : unique);
-      setActiveCategory(hasRecommendation ? '추천' : data.find(product=>product.dispenser_slot)?.category || unique[0] || null);
-      setFetchError(getLastFetchError() || (!data.length ? '표시할 상품이 없습니다.' : null));
-      setLoading(false);
-    });
-    return () => { cancelled = true; };
+      const nextCategories = hasRecommendation ? ['추천', ...unique] : unique;
+      setActiveCategory(previous => !initial && nextCategories.includes(previous) ? previous : hasRecommendation ? '추천' : data.find(product=>product.dispenser_slot)?.category || unique[0] || null);
+      setCart(previous => previous.flatMap(item => {
+        const product=data.find(p=>p.id===item.product.id);
+        return product?.dispenser_slot && product.stock>0 ? [{product,qty:Math.min(item.qty,product.stock)}] : [];
+      }));
+      setFetchError(!data.length ? '표시할 상품이 없습니다.' : null);
+      initial = false;
+      } catch { if (!cancelled) setFetchError('재고 조회에 실패했습니다. 연결을 확인해주세요.'); }
+      finally { fetching=false; if (!cancelled) setLoading(false); }
+    };
+    refreshInventory.current=refresh;
+    refresh();
+    const interval=setInterval(refresh,15000);
+    const onVisible=()=>{if(document.visibilityState==='visible')refresh();};
+    window.addEventListener('focus',refresh);
+    document.addEventListener('visibilitychange',onVisible);
+    return () => { cancelled = true; clearInterval(interval); window.removeEventListener('focus',refresh); document.removeEventListener('visibilitychange',onVisible); };
   }, [recommendedCombo]);
 
   // Cart helpers
   const addToCart = (product) => {
-    if (ordering.current || showPayment || safetyExclusions[product.id]) return;
+    if (ordering.current || showPayment || safetyExclusions[product.id] || !product.dispenser_slot) return;
     setCart((prev) => {
       if(prev.reduce((sum,item)=>sum+item.qty,0)>=5)return prev;
       const existing = prev.find((p) => p.product.id === product.id);
@@ -61,10 +84,12 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
   };
 
   const removeFromCart = (productId) => {
+    if (ordering.current || showPayment) return;
     setCart((prev) => prev.filter((item) => item.product.id !== productId));
   };
 
   const changeCartQty = (productId, delta) => {
+    if (ordering.current || showPayment) return;
     setCart((prev) =>
       delta>0 && prev.reduce((sum,item)=>sum+item.qty,0)>=5 ? prev : prev
         .map((item) =>
@@ -78,31 +103,36 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
   const qrRules = recommendedCombo?.qrRules || null;
 
   const openPayment = () => {
+    if (ordering.current || showPayment) return;
     if (cart.length === 0) {
       setOrderMessage({ type: 'error', text: '장바구니에 제품을 담아주세요.' });
       return;
     }
     setOrderMessage(null);
-    setShowPayment(true);
+    handlePay();
   };
 
   const handlePay = async () => {
     if (ordering.current) return { ok: false, message: '주문 처리 중입니다.' };
     ordering.current = true;
+    setDispenseResult(null);
+    setShowPayment(true);
     setIsOrdering(true);
     onOrderingChange(true);
     try {
-      const result = await placeOrder(cart, {
-        qrProfile: recommendedCombo?.qrData || null,
-      });
+      const result = await placeOrder(cart, recommendedCombo?.qrProfile?.id || null);
+      setDispenseResult(result);
       if (result.ok) {
         setCart([]);
       }
       return result;
     } catch {
-      return { ok: false, message: '배출 처리 중 오류가 발생했습니다.' };
+      const result = { ok: false, requiresReview:true, message: '배출 결과를 확인하지 못했습니다. 이전 요청 확인이 필요합니다.' };
+      setDispenseResult(result);
+      return result;
     } finally {
       ordering.current = false; setIsOrdering(false); onOrderingChange(false);
+      refreshInventory.current();
     }
   };
 
@@ -136,9 +166,9 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
         <>
           {activeCategory === '추천' && recommendedCombo && (
             <div className="recommend-info-panel">
-              <h3>맞춤 추천 · {(recommendedCombo.items || []).length}개 상품</h3>
-              <p className="recommend-brief">식사 보완을 위한 참고 정보입니다. 이용 전 주의사항을 확인해주세요.</p>
-              {!recommendedCombo.items?.length && <p role="status">현재 정보로 자동 추천할 상품이 없습니다. 아래 제외 사유를 확인해주세요.</p>}
+              <h3>관련 영양제 · 추천 가능 {(recommendedCombo.items || []).length}개 상품</h3>
+              <p className="recommend-brief">{recommendedCombo.guidance || '식사 보완 후보입니다. 이용 전 주의사항을 확인해주세요.'}</p>
+              {!recommendedCombo.items?.length && <p role="status">현재 정보로 자동 추천할 상품이 없습니다. 관련 후보는 참고용이며 추천·배출이 제한됩니다.</p>}
               <details className="recommend-details">
                 <summary>주의사항·추천 근거 보기</summary>
                 <div className="recommend-details-body">
@@ -200,7 +230,7 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
                 <div className="card-name">{product.name}</div>
                 <div className="card-desc">{product.description || '제품 성분과 함량을 확인해주세요.'}</div>
                 {activeCategory === '추천' && product.category ? (
-                  <div className="card-reason">검토 후보: {product.category}</div>
+                  <div className="card-reason">{safetyExclusions[product.id] ? '참고 정보 · 배출 제한' : '식사 보완 후보'}: {product.category}</div>
                 ) : null}
                 {activeCategory === '추천' && product.category ? (
                   <div className="card-reason-desc">
@@ -272,16 +302,14 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
           onClick={openPayment}
           disabled={showPayment || cart.length === 0}
         >
-          무료 배출
+          구매하기 (무료)
         </button>
       </div>
 
       <DispenseModal
         open={showPayment}
         onClose={handlePaymentClose}
-        cart={cart}
-        totalQty={cart.reduce((s, it) => s + it.qty, 0)}
-        onDispense={handlePay}
+        result={dispenseResult}
         onComplete={onOrderComplete}
       />
     </div>

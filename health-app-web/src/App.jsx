@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import './App.css';
+import AdminInventory from './components/AdminInventory';
+import {loginAdmin,logoutAdmin,adminAction} from './services/adminService';
 import { createQrDataUrl } from './services/qrImage';
 import { toKioskProfile, validateQrProfile, serializeQrProfile } from './services/qrProfile';
 import healthCatalog from './services/healthCatalog.json';
 import { authClient, requireAuthClient, memberSession, authErrorMessage, authenticateMember, verifySignupLink } from './services/authClient';
 import {
-  deleteVendingMachine,
   getHealthProfile,
   getPurchaseHistory,
   getVendingMachines,
@@ -13,7 +14,6 @@ import {
   mapDbMachineToAppMachine,
   mapDbProfileToAppProfile,
   saveHealthProfile,
-  saveVendingMachine,
 } from './services/healthDb';
 
 const VENDING_MACHINES_KEY = 'health-app-vending-machines-v1';
@@ -196,8 +196,12 @@ function App() {
   const [mapStatus, setMapStatus] = useState('');
   const [vendingMachines, setVendingMachines] = useState(() => loadJson(VENDING_MACHINES_KEY, DEFAULT_VENDING_MACHINES));
   const [machineForm, setMachineForm] = useState(EMPTY_MACHINE_FORM);
+  const [pickerSeed,setPickerSeed]=useState(EMPTY_MACHINE_FORM);
+  const [machineBusy,setMachineBusy]=useState(false);
+  const machineLock=useRef(false);
   const [machineNotice, setMachineNotice] = useState('');
   const [machineError, setMachineError] = useState('');
+  const [adminView,setAdminView]=useState('inventory');
   const [allergyMode, setAllergyMode] = useState(() =>
     ALLERGY_OPTIONS.includes(profile.allergies) ? profile.allergies : '직접 입력'
   );
@@ -214,7 +218,7 @@ function App() {
     if (!session?.userId || !isHealthDbConfigured) return;
     getVendingMachines()
       .then((rows) => {
-        if (rows.length) setVendingMachines(rows.map(mapDbMachineToAppMachine));
+        setVendingMachines(rows.map(mapDbMachineToAppMachine));
       })
       .catch(() => {});
   }, [session?.userId]);
@@ -305,24 +309,25 @@ function App() {
   }, [activeScreen, vendingMachines]);
 
   useEffect(() => {
-    if (activeScreen !== 'admin') return undefined;
+    if (activeScreen !== 'admin' || adminView !== 'locations') return undefined;
 
     const pickerElement = document.getElementById('admin-location-map');
     if (!pickerElement) return undefined;
 
     let cancelled = false;
+    let cleanupClick=()=>{};
+    let addressRequest=0;
     const renderPicker = async () => {
       try {
         const kakao = await loadKakaoMapSdk();
         if (cancelled) return;
         kakao.maps.load(() => {
           if (cancelled) return;
-          const startLat = Number(machineForm.lat) || MAP_START_POINT.lat;
-          const startLng = Number(machineForm.lng) || MAP_START_POINT.lng;
+          const startLat = Number(pickerSeed.lat) || MAP_START_POINT.lat;
+          const startLng = Number(pickerSeed.lng) || MAP_START_POINT.lng;
           const startPosition = new kakao.maps.LatLng(startLat, startLng);
-          const center = new kakao.maps.LatLng(MAP_START_POINT.lat, MAP_START_POINT.lng);
           const pickerMap = new kakao.maps.Map(pickerElement, {
-            center,
+            center: startPosition,
             level: 4,
           });
           const pickerMarker = new kakao.maps.Marker({
@@ -331,7 +336,9 @@ function App() {
           });
           const geocoder = kakao.maps.services ? new kakao.maps.services.Geocoder() : null;
 
-          kakao.maps.event.addListener(pickerMap, 'click', (mouseEvent) => {
+          const onMapClick = (mouseEvent) => {
+            if (machineLock.current) return;
+            const requestId=++addressRequest;
             const position = mouseEvent.latLng;
             const lat = position.getLat().toFixed(6);
             const lng = position.getLng().toFixed(6);
@@ -340,11 +347,12 @@ function App() {
               ...prev,
               lat,
               lng,
-              address: prev.address || `선택 위치 (${lat}, ${lng})`,
+              address: `선택 위치 (${lat}, ${lng})`,
             }));
 
             if (!geocoder) return;
             geocoder.coord2Address(position.getLng(), position.getLat(), (result, status) => {
+              if(cancelled || requestId!==addressRequest)return;
               if (status !== kakao.maps.services.Status.OK || !result[0]) return;
               const roadAddress = result[0].road_address?.address_name;
               const jibunAddress = result[0].address?.address_name;
@@ -353,7 +361,9 @@ function App() {
                 address: roadAddress || jibunAddress || prev.address,
               }));
             });
-          });
+          };
+          kakao.maps.event.addListener(pickerMap,'click',onMapClick);
+          cleanupClick=()=>kakao.maps.event.removeListener(pickerMap,'click',onMapClick);
         });
       } catch (error) {
         if (!cancelled) setMachineNotice(error.message);
@@ -364,8 +374,9 @@ function App() {
 
     return () => {
       cancelled = true;
+      cleanupClick();
     };
-  }, [activeScreen, machineForm.id, machineForm.lat, machineForm.lng]);
+  }, [activeScreen, adminView, pickerSeed]);
 
   const updateProfile = (key, value) => {
     setProfile((prev) => ({ ...prev, [key]: value }));
@@ -437,6 +448,14 @@ function App() {
       const name = authForm.name.trim();
       if (!email || !password || (authMode === 'signup' && !name)) throw new Error('필수 항목을 입력해주세요.');
       if (name.length > 100) throw new Error('이름은 100자 이내로 입력해주세요.');
+      if (authMode === 'admin') {
+        await loginAdmin(email,password);
+        sessionEpoch.current += 1;
+        setSession({userId:'admin',name:'관리자',isAdmin:true});
+        setNeedsHealthSetup(false);setScreen('admin');
+        setAuthForm(prev=>({...prev,password:''}));
+        return;
+      }
       if (authMode === 'signup' && password.length < 8) throw new Error('비밀번호는 8자 이상으로 입력해주세요.');
       const data = await authenticateMember({mode:authMode,email,password,name});
       setAuthForm((prev) => ({...prev,password:''}));
@@ -458,7 +477,9 @@ function App() {
   };
 
   const logout = async () => {
-    try {
+    if(session?.isAdmin) {
+      try {await logoutAdmin();} catch { /* Local token is cleared even when offline. */ }
+    } else try {
       const {error} = await requireAuthClient().auth.signOut({scope:'local'});
       if (error) throw error;
     } catch (error) { setHealthError(authErrorMessage(error)); return; }
@@ -536,8 +557,11 @@ function App() {
   };
 
   const editMachine = (machine) => {
+    if(machineLock.current)return;
+    setPickerSeed(machine);
     setMachineForm({
       ...machine,
+      status:['운영중','점검중','중지'].includes(machine.status)?machine.status:'점검중',
       lat: String(machine.lat),
       lng: String(machine.lng),
     });
@@ -546,11 +570,13 @@ function App() {
   };
 
   const clearMachineForm = () => {
+    setPickerSeed({...EMPTY_MACHINE_FORM});
     setMachineForm(EMPTY_MACHINE_FORM);
     setMachineError('');
   };
 
   const submitMachine = async () => {
+    if(machineLock.current)return;
     const id = machineForm.id.trim() || `vm-${Date.now()}`;
     const nextMachine = {
       id,
@@ -565,46 +591,34 @@ function App() {
       setMachineError('자판기 이름과 위치 설명을 입력해주세요.');
       return;
     }
-    if (!Number.isFinite(nextMachine.lat) || !Number.isFinite(nextMachine.lng)) {
+    if (!String(machineForm.lat).trim() || !String(machineForm.lng).trim() || !Number.isFinite(nextMachine.lat) || !Number.isFinite(nextMachine.lng)) {
       setMachineError('위도와 경도는 숫자로 입력해주세요.');
       return;
     }
 
-    setVendingMachines((prev) => {
-      const exists = prev.some((machine) => machine.id === id);
-      return exists
-        ? prev.map((machine) => (machine.id === id ? nextMachine : machine))
-        : [...prev, nextMachine];
-    });
-
-    if (isHealthDbConfigured) {
-      try {
-        await saveVendingMachine(nextMachine);
-        setMachineNotice('자판기 정보가 저장되었습니다.');
-      } catch {
-        setMachineNotice('자판기 정보가 저장되었습니다.');
-      }
-    } else {
-      setMachineNotice('자판기 정보가 저장되었습니다.');
-    }
-
-    clearMachineForm();
+    machineLock.current=true;setMachineBusy(true);
+    setMachineError('');setMachineNotice('');
+    try {
+      const result=await adminAction('machine_save',nextMachine);
+      if(result?.ok!==true)throw new Error('저장 결과를 확인할 수 없습니다.');
+      setVendingMachines(prev=>prev.some(machine=>machine.id===id)?prev.map(machine=>machine.id===id?nextMachine:machine):[...prev,nextMachine]);
+      clearMachineForm();setMachineNotice('자판기 정보가 DB에 저장되었습니다.');
+    } catch(error) {setMachineError(error.message);}
+    finally {machineLock.current=false;setMachineBusy(false);}
   };
 
   const removeMachine = async (machineId) => {
-    setVendingMachines((prev) => prev.filter((machine) => machine.id !== machineId));
-    if (machineForm.id === machineId) clearMachineForm();
-
-    if (isHealthDbConfigured) {
-      try {
-        await deleteVendingMachine(machineId);
-        setMachineNotice('자판기 정보가 삭제되었습니다.');
-      } catch {
-        setMachineNotice('자판기 정보가 삭제되었습니다.');
-      }
-    } else {
-      setMachineNotice('자판기 정보가 삭제되었습니다.');
-    }
+    if(machineLock.current)return;
+    machineLock.current=true;setMachineBusy(true);
+    setMachineError('');setMachineNotice('');
+    try {
+      const result=await adminAction('machine_delete',{id:machineId});
+      if(result?.ok!==true)throw new Error('삭제 결과를 확인할 수 없습니다.');
+      setVendingMachines(prev=>prev.filter(machine=>machine.id!==machineId));
+      if(machineForm.id===machineId)clearMachineForm();
+      setMachineNotice('자판기 정보가 DB에서 삭제되었습니다.');
+    } catch(error) {setMachineError(error.message);}
+    finally {machineLock.current=false;setMachineBusy(false);}
   };
 
   if (!authReady) return <main className="app-bg"><p role="status">로그인 상태를 확인하고 있습니다...</p></main>;
@@ -622,6 +636,7 @@ function App() {
 
             <form className="auth-panel" onSubmit={handleAuthSubmit}>
               <div className="auth-tabs">
+                <button type="button" className={authMode==='admin'?'active':''} onClick={()=>{setAuthMode('admin');setAuthError('');}}>관리자</button>
                 <button
                   type="button"
                   className={authMode === 'login' ? 'active' : ''}
@@ -655,11 +670,11 @@ function App() {
                 </label>
               )}
               <label className="auth-field">
-                이메일
+                {authMode==='admin'?'관리자 ID':'이메일'}
                 <input
                   value={authForm.userId}
                   onChange={(event) => setAuthForm((prev) => ({ ...prev, userId: event.target.value }))}
-                  type="email" autoComplete="email" required placeholder="example@email.com"
+                  type={authMode==='admin'?'text':'email'} autoComplete={authMode==='admin'?'username':'email'} required placeholder={authMode==='admin'?'관리자 ID':'example@email.com'}
                 />
               </label>
               <label className="auth-field">
@@ -674,7 +689,7 @@ function App() {
 
               {authError && <p className="form-error">{authError}</p>}
               <button className="auth-submit" type="submit" disabled={authBusy}>
-                {authBusy ? '연결 중...' : authMode === 'login' ? '로그인' : '회원가입'}
+                {authBusy ? '연결 중...' : authMode === 'signup' ? '회원가입' : '로그인'}
               </button>
             </form>
             <details className="email-confirm-help"><summary>이메일 인증 후 화면이 열리지 않나요?</summary><p>아직 열지 않은 인증 메일의 버튼 링크를 복사해 여기에 붙여넣으면 이 화면에서 인증할 수 있습니다. 이미 인증했다면 이메일로 로그인해주세요.</p>
@@ -740,7 +755,13 @@ function App() {
         {activeScreen === 'admin' && (
           <>
             <Header title="자판기 관리" eyebrow="관리자" onBack={logout} />
-            <section className="admin-panel">
+            <nav className="admin-view-tabs" aria-label="관리 항목">
+              <button type="button" aria-pressed={adminView==='inventory'} onClick={()=>setAdminView('inventory')}>재고 관리</button>
+              <button type="button" aria-pressed={adminView==='locations'} onClick={()=>setAdminView('locations')}>자판기 위치</button>
+              <button type="button" onClick={logout}>로그아웃</button>
+            </nav>
+            <AdminInventory hidden={adminView!=='inventory'} />
+            <section className="admin-panel" hidden={adminView!=='locations'}>
               <div className="admin-summary">
                 <strong>등록 자판기 {vendingMachines.length}대</strong>
                 <button type="button" onClick={logout}>로그아웃</button>
@@ -773,10 +794,10 @@ function App() {
                   <option value="중지">중지</option>
                 </select>
                 <div className="admin-actions">
-                  <button type="button" onClick={submitMachine}>
+                  <button type="button" disabled={machineBusy} onClick={submitMachine}>
                     {machineForm.id ? '수정' : '등록'}
                   </button>
-                  <button type="button" onClick={clearMachineForm}>
+                  <button type="button" disabled={machineBusy} onClick={clearMachineForm}>
                     초기화
                   </button>
                 </div>
@@ -793,8 +814,8 @@ function App() {
                       <small>{machine.status} / {machine.lat}, {machine.lng}</small>
                     </div>
                     <div className="machine-card-actions">
-                      <button type="button" onClick={() => editMachine(machine)}>수정</button>
-                      <button type="button" onClick={() => removeMachine(machine.id)}>삭제</button>
+                      <button type="button" disabled={machineBusy} onClick={() => editMachine(machine)}>수정</button>
+                      <button type="button" disabled={machineBusy} onClick={() => removeMachine(machine.id)}>삭제</button>
                     </div>
                   </article>
                 ))}
@@ -931,8 +952,9 @@ function App() {
 
         {activeScreen === 'history' && (
           <>
-            <Header title="내 이용 내역" eyebrow="배출 기록" onBack={() => setScreen('home')} />
+            <Header title="내 구매내역" eyebrow="이용 기록" onBack={() => setScreen('home')} />
             <section className="history-panel">
+              <p>내 QR을 스캔한 뒤 배출이 완료된 기록입니다. QR 없이 직접 구매한 기록은 포함되지 않습니다.</p>
               <button className="primary-btn" type="button" disabled={historyLoading} onClick={() => {
                 setPurchaseHistory([]); setHistoryError(''); setHistoryLoading(true); setHistoryRefresh((value) => value + 1);
               }}>새로고침</button>
@@ -1060,7 +1082,7 @@ function ChoiceOptionScreen({ config, mode, value, onBack, onSelect, onCustomCha
     <>
       <Header title={config.title} eyebrow={config.eyebrow} onBack={onBack} />
       <section className="choice-option-wrap">
-        <p>해당하는 항목을 모두 선택해주세요. 약은 가능하면 구체적인 성분·종류를 선택해주세요.</p>
+        <p>해당하는 항목을 한 가지 선택해주세요. 약은 가능하면 구체적인 성분·종류를 선택해주세요.</p>
         {config.options.map((option) => (
           <button
             key={option}
@@ -1078,7 +1100,7 @@ function ChoiceOptionScreen({ config, mode, value, onBack, onSelect, onCustomCha
             className="choice-detail choice-detail-full"
             value={value === '해당 없음' ? '' : value}
             onChange={(event) => onCustomChange(event.target.value)}
-            placeholder={`${config.label} 전체 항목을 쉼표로 구분해주세요`}
+            placeholder={`${config.label} 한 가지를 입력해주세요`}
           />
       )}
 

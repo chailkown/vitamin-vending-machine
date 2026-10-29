@@ -73,7 +73,7 @@ export const saveHealthProfile = async ({ userId, profile, kioskPayload }) => {
     body: JSON.stringify([body]),
   });
 
-  // QR expiration belongs to the newly generated QR itself, not the profile save time.
+  // Health changes regenerate a QR without an expiration time.
   if (!profileRows?.[0]) throw new Error('저장 결과를 확인하지 못했습니다. 다시 시도해주세요.');
   return profileRows[0];
 };
@@ -85,7 +85,7 @@ export const getVendingMachines = async () => {
 
 export const getPurchaseHistory = async (userId) => {
   if (!userId) throw new Error('다시 로그인해주세요.');
-  const rows = await request(`orders?member_user_id=eq.${encodeURIComponent(userId)}&status=eq.completed&select=*,order_items(*)&order=completed_at.desc`);
+  const rows = await request('rpc/member_purchase_history', {method:'POST', body:'{}'});
   if (!Array.isArray(rows)) throw new Error('구매 내역 응답을 확인할 수 없습니다.');
   return rows.filter((order) => order.member_user_id === userId && order.status === 'completed');
 };

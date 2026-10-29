@@ -26,7 +26,7 @@ export const getRecommendationForSymptom = async (symptomCode) => {
     categoryTitle: category?.title || '',
     guidance: review?.message || '이 증상만으로 영양소 결핍을 판단할 수 없습니다. 지속되거나 심해지면 진료를 받아주세요.',
     sources: (review?.sources || ['general']).map((id) => EVIDENCE[id]),
-    hold: !review?.nutrients?.length,
+    hold: !review?.nutrients?.length || Boolean(review.informationOnly),
   };
 };
 
@@ -37,11 +37,17 @@ export const getRecommendationResult = async (symptomCode, qrProfile = null) => 
   const candidates = all.filter((p) => meta.nutrients.includes(p.category));
   const result = assessRecommendedProducts(candidates, qrProfile, qrRules);
   const accepted = meta.hold ? [] : result.accepted;
+  const exclusions = candidates.map((product) => {
+    const restriction = result.excluded.find((item) => item.id === product.id);
+    return restriction || (meta.hold ? {id:product.id,name:product.name,reason:meta.guidance} : null);
+  }).filter(Boolean);
   const sources = [...meta.sources, ...(qrRules?.sources || [])];
   return {
     ...meta, items: accepted.map((p) => p.id), products: accepted,
     nutrients: [...new Set(accepted.map((p) => p.category))],
-    qrProfile, qrRules, productExclusions: result.excluded,
+    relatedItems: candidates.map((p) => p.id),
+    relatedNutrients: meta.nutrients,
+    qrProfile, qrRules, productExclusions: exclusions,
     sources: sources.filter((source, i) => sources.findIndex((s) => s.url === source.url) === i),
     hold: meta.hold || Boolean(qrRules?.hold),
     warnings: [

@@ -1,0 +1,41 @@
+-- Run inside a transaction with test.admin_password set; always ROLLBACK.
+do $$
+declare login jsonb; token text; item jsonb; rows jsonb; result jsonb; data jsonb;
+ before_stock integer; product_id bigint; rejected boolean; rid uuid:=gen_random_uuid();
+begin
+ login:=public.mobile_admin_login('admin','incorrect-test-password');
+ assert login ? 'error','wrong password accepted';
+ login:=public.mobile_admin_login('admin',current_setting('test.admin_password'));
+ token:=login->>'token'; assert length(token)=64,'login failed';
+ rows:=public.mobile_admin_action(token,'list');assert jsonb_array_length(rows)=20,'expected 20 products';
+ item:=rows->0;product_id:=(item->>'id')::bigint;before_stock:=(item->>'stock')::integer;
+ data:=jsonb_build_object('id',product_id,'quantity',2,'expected',before_stock,'requestId',rid);
+ result:=public.mobile_admin_action(token,'add',data);assert (result->>'stock')::integer=before_stock+2,'add failed';
+ result:=public.mobile_admin_action(token,'add',data);assert (result->>'replayed')::boolean,'duplicate not detected';
+ assert (select stock from public.vitamins where id=product_id)=before_stock+2,'duplicate increment';
+ rejected:=false;
+ begin perform public.mobile_admin_action(token,'set',data||jsonb_build_object('requestId',gen_random_uuid(),'quantity',0));exception when others then rejected:=true;end;
+ assert rejected,'stale stock overwritten';
+ result:=public.mobile_admin_action(token,'set',data||jsonb_build_object('requestId',gen_random_uuid(),'expected',before_stock+2,'quantity',0));
+ assert (result->>'stock')::integer=0,'zero inventory failed';
+ rejected:=false;
+ begin perform public.mobile_admin_action('invalid','list');exception when others then rejected:=true;end;
+ assert rejected,'invalid token accepted';
+ rejected:=false;
+ begin perform public.mobile_admin_action(token,'add',data||jsonb_build_object('requestId',gen_random_uuid(),'expected',0,'quantity',-1));exception when others then rejected:=true;end;
+ assert rejected,'negative quantity accepted';
+ insert into public.orders(total_amount,total_qty,status,request_id,payment_method) values(0,1,'dispensing',gen_random_uuid(),'free');
+ rejected:=false;
+ begin perform public.mobile_admin_action(token,'add',data||jsonb_build_object('requestId',gen_random_uuid(),'expected',0));exception when others then rejected:=true;end;
+ assert rejected,'stock changed during dispensing';
+ perform public.mobile_admin_action(token,'machine_save',jsonb_build_object('id','admin-transaction-test','name','테스트 위치','address','테스트 주소','lat',37.5,'lng',127.0,'status','점검중'));
+ assert exists(select 1 from public.app_vending_machines where machine_id='admin-transaction-test'),'location save failed';
+ perform public.mobile_admin_action(token,'machine_delete',jsonb_build_object('id','admin-transaction-test'));
+ assert not exists(select 1 from public.app_vending_machines where machine_id='admin-transaction-test'),'location delete failed';
+ perform public.mobile_admin_action(token,'logout');
+ rejected:=false;
+ begin perform public.mobile_admin_action(token,'list');exception when others then rejected:=true;end;
+ assert rejected,'logout token accepted';
+ for i in 1..5 loop perform public.mobile_admin_login('admin','incorrect-test-password');end loop;
+ assert (public.mobile_admin_login('admin',current_setting('test.admin_password'))->>'error') like '%5분%','login throttle failed';
+end $$;

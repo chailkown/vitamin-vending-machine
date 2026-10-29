@@ -50,35 +50,49 @@ class Gateway:
  def status(self,rid):
   with self.db() as db:row=db.execute('select state,result from requests where id=?',(rid,)).fetchone()
   if not row:return {'known':False,'requiresReview':True}
-  return {'known':True,'state':row[0],'requiresReview':row[0] not in ('completed','failed'),'result':json.loads(row[1]) if row[1] else None}
+  return {'known':True,'state':row[0],'requiresReview':row[0] not in ('completed','failed','cancelled'),'result':json.loads(row[1]) if row[1] else None}
+ def reconcile(self,rid):
+  try:rid=str(uuid.UUID(rid))
+  except (ValueError,TypeError,AttributeError):return {'known':False,'requiresReview':True}
+  if not self.lock.acquire(False):return {'known':False,'requiresReview':True}
+  try:
+   status=self.status(rid)
+   if status['known']:return status
+   # A DB tombstone uses the same advisory lock as reservation. A delayed
+   # POST can never reserve or run after this cancellation is acknowledged.
+   result=self.cloud.rpc('cancel_unreceived_free_order',{'p_request_id':rid})
+   if result.get('status')!='cancelled':return {'known':False,'requiresReview':True}
+   self.record(rid,'','cancelled',result={'ok':False,'requiresReview':False,'message':'접수되지 않은 요청을 취소했습니다.'})
+   return self.status(rid)
+  except Exception:return {'known':False,'requiresReview':True}
+  finally:self.lock.release()
  def order(self,data):
   try:
-   rid=str(uuid.UUID(data['requestId']));items=data['items'];qr=data.get('qrProfile')
+   if not isinstance(data,dict) or set(data) not in ({'requestId','items'},{'requestId','items','historyUserId'}):raise ValueError()
+   history_user=str(uuid.UUID(data['historyUserId'])) if 'historyUserId' in data else None
+   rid=str(uuid.UUID(data['requestId']));items=data['items']
    if not isinstance(items,list) or not 1<=len(items)<=20:raise ValueError()
    if any(not isinstance(i,dict) or type(i.get('vitamin_id')) is not int or i['vitamin_id']<1 or type(i.get('quantity')) is not int or not 1<=i['quantity']<=5 for i in items):raise ValueError()
    if sum(i['quantity'] for i in items)>5:raise ValueError()
-   if qr is not None:
-    if not isinstance(qr,dict) or set(qr)!={'id','n','a','g','h','w','s','al','c','ag','m'}:raise ValueError()
-    if any(not isinstance(qr[k],str) or not qr[k].strip() or len(qr[k])>100 for k in ('id','n')) or qr['g'] not in ('M','F'):raise ValueError()
-    for key,minimum,maximum in [('a',1,120),('h',80,230),('w',20,200),('s',0,1),('al',0,3)]:
-     if type(qr[key])is not int or not minimum<=qr[key]<=maximum:raise ValueError()
-    for key,maximum in [('c',20),('ag',12),('m',19)]:
-     if type(qr[key])is not int or not (0<=qr[key]<=maximum or qr[key]==99):raise ValueError()
   except (KeyError,ValueError,TypeError,AttributeError):return {'ok':False,'message':'요청 형식이 잘못됐습니다.','requiresReview':False}
-  fp=hashlib.sha256(json.dumps([items,qr],sort_keys=True).encode()).hexdigest()
+  fp=hashlib.sha256(json.dumps({'items':items,'historyUserId':history_user} if history_user else items,sort_keys=True).encode()).hexdigest()
   if not self.lock.acquire(False):return {'ok':False,'message':'배출 중입니다. 잠시 기다려주세요.','requiresReview':False}
   order_id=None;started=False
   try:
    with self.db() as db:
     old=db.execute('select fingerprint,state,result from requests where id=?',(rid,)).fetchone()
-    unresolved=db.execute("select count(*) from requests where state not in ('completed','failed')").fetchone()[0]
+    unresolved=db.execute("select count(*) from requests where state not in ('completed','failed','cancelled')").fetchone()[0]
    if old:
+    if old[1]=='cancelled':return {'ok':False,'requiresReview':False,'message':'취소된 요청입니다. 새로 구매해주세요.'}
     if old[0]!=fp:return {'ok':False,'requiresReview':True,'message':'동일 요청의 내용이 변경되었습니다.'}
     if old[2]:return json.loads(old[2])
     return {'ok':False,'requiresReview':True,'message':'이전 배출 결과를 관리자가 확인해야 합니다.'}
    if unresolved:return {'ok':False,'requiresReview':True,'message':'미확정 배출이 있습니다. 관리자 확인 전에는 배출할 수 없습니다.'}
    self.record(rid,fp,'reserving')
-   try:receipt=self.cloud.rpc('reserve_free_order',{'p_request_id':rid,'items':items,'p_qr_token':json.dumps(qr,ensure_ascii=True) if qr else None})
+   try:
+    payload={'p_request_id':rid,'items':items}
+    if history_user:payload['p_history_user_id']=history_user
+    receipt=self.cloud.rpc('reserve_free_order_with_history' if history_user else 'reserve_free_order',payload)
    except Rejected as error:
     result={'ok':False,'requiresReview':False,'message':str(error)};self.record(rid,fp,'failed',result=result);return result
    order_id=receipt['order_id']
@@ -137,13 +151,14 @@ def handler_for(gateway,static_root,hosts):
    return super().do_GET()
   def do_POST(self):
    if not self.valid() or not self.control() or self.headers.get('Origin')!='http://'+self.headers.get('Host',''):return self.reply(403,{'ok':False,'message':'라즈베리파이 화면에서만 배출할 수 있습니다.'})
-   if self.path!='/api/order':return self.reply(404,{})
+   if self.path not in ('/api/order','/api/reconcile'):return self.reply(404,{})
    try:
     size=int(self.headers.get('Content-Length','0'))
     if size<1 or size>8192 or self.headers.get('Content-Type','').split(';')[0]!='application/json':raise ValueError()
     data=json.loads(self.rfile.read(size))
     if not isinstance(data,dict):raise ValueError()
    except (ValueError,TypeError):return self.reply(400,{'ok':False,'message':'요청 형식 오류'})
+   if self.path=='/api/reconcile':return self.reply(200,gateway.reconcile(data.get('requestId')))
    return self.reply(200,gateway.order(data))
  return Handler
 
@@ -162,7 +177,7 @@ def main():
   for ip in subprocess.check_output(['hostname','-I'],text=True).split():hosts.add(f'{ip}:{args.port}')
   server=ThreadingHTTPServer(('0.0.0.0',args.port),handler_for(gateway,root/'kiosk',hosts))
   print('무료 배출 키오스크: http://localhost:'+str(args.port),flush=True)
-  print('D3/C · D4/D3 연결. 센서가 없어 실제 낙하는 수령구에서 확인합니다.',flush=True)
+  print('모터1~20: D3~D22 (11번은 D24) / DHT22: D2 / 팬: D23. 실제 낙하는 수령구에서 확인합니다.',flush=True)
   try:server.serve_forever()
   except KeyboardInterrupt:pass
   finally:motor.stop();server.server_close()

@@ -10,9 +10,30 @@ let container, root;
 beforeEach(()=>{
   global.IS_REACT_ACT_ENVIRONMENT=true;
   container=document.createElement('div');document.body.appendChild(container);root=createRoot(container);
-  getAllVitamins.mockResolvedValue([{id:3,name:'C 상품',category:'비타민 C',price:150,stock:5}]);
+  getAllVitamins.mockResolvedValue([{id:3,name:'C 상품',category:'비타민 C',price:150,stock:5,dispenser_slot:1}]);
+});
+
+test('related products remain visible but a recommendation hold blocks cart across category changes',async()=>{
+  await act(async()=>root.render(<PurchaseScreen onBack={()=>{}} onOrderingChange={()=>{}} onOrderComplete={()=>{}} recommendedCombo={{items:[],relatedItems:[3],hold:true,guidance:'현재 조건에서는 추천 불가',productExclusions:[{id:3,name:'C 상품',reason:'건강조건 확인 필요'}]}}/>));
+  expect(container.querySelector('.card-name').textContent).toBe('C 상품');
+  expect(container.querySelector('.card-button').disabled).toBe(true);
+  await act(async()=>container.querySelector('.card-button').click());
+  expect(container.querySelector('.cart-item')).toBeNull();
+  await act(async()=>[...container.querySelectorAll('.tab')].find(el=>el.textContent==='비타민 C').click());
+  expect(container.querySelector('.card-button').disabled).toBe(true);
 });
 afterEach(async()=>{await act(async()=>root.unmount());container.remove();});
+
+test('focus refresh removes an out-of-stock cart item without changing selected category',async()=>{
+  await act(async()=>root.render(<PurchaseScreen onBack={()=>{}} onOrderingChange={()=>{}} onOrderComplete={()=>{}}/>));
+  await act(async()=>container.querySelector('.card-button').click());
+  expect(container.querySelector('.cart-item')).not.toBeNull();
+  getAllVitamins.mockResolvedValue([{id:3,name:'C 상품',category:'비타민 C',stock:0,dispenser_slot:1}]);
+  await act(async()=>window.dispatchEvent(new Event('focus')));
+  expect(container.querySelector('.cart-item')).toBeNull();
+  expect(container.querySelector('.card-button').disabled).toBe(true);
+  expect(container.querySelector('.tab.active').textContent).toBe('비타민 C');
+});
 
 test('empty recommendation retains explanation and recommendation tab instead of selecting an unrelated product',async()=>{
   await act(async()=>root.render(<PurchaseScreen onBack={()=>{}} onOrderingChange={()=>{}} onOrderComplete={()=>{}} recommendedCombo={{items:[],title:'추천',guidance:'원인 평가가 필요합니다.',warnings:['상담 안내'],sources:[],nutrients:[]}}/>));

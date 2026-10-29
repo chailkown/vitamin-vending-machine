@@ -178,7 +178,7 @@ test('food allergies require verified product labels; allergens and malformed me
 });
 test('symptom-only, liver, tingling and eye complaints do not imply a treatable deficiency', async () => {
   const ctx=recommendationContext({parsed:healthyProfile});
-  for(const symptom of ['liv-a','liv-b','liv-c','mus-b','eye-a','eye-b','eye-c','dig-a','energy-a','unknown']) {
+  for(const symptom of ['liv-a','liv-b','liv-c','mus-b','eye-a','eye-b','eye-c','dig-a','jnt-b','unknown']) {
     ctx.symptom=symptom;
     const result=await vm.runInContext('getRecommendationResult(symptom,parsed)',ctx);
     assert.equal(result.items.length,0,symptom);assert.ok(result.guidance);
@@ -187,6 +187,26 @@ test('symptom-only, liver, tingling and eye complaints do not imply a treatable 
   assert.deepEqual(Array.from(normal.items),[3,4]);
   const noQr=await vm.runInContext("getRecommendationResult('diet-c')",ctx);
   assert.ok(noQr.warnings.some((text)=>text.includes('QR 건강정보가 없어')));
+});
+
+test('every visible situation has related candidates; QR restrictions never become purchasable fallback', async () => {
+ const ctx=recommendationContext({parsed:healthyProfile});
+ const catalog=await vm.runInContext('getRecommendationCatalog()',ctx);
+ for(const category of catalog) for(const situation of category.symptoms) {
+  ctx.symptom=situation.code;
+  const result=await vm.runInContext('getRecommendationResult(symptom,parsed)',ctx);
+  assert.ok(result.relatedItems.length>0,situation.code);
+  assert.ok(result.guidance,situation.code);
+  if(result.hold) assert.equal(result.items.length,0,situation.code);
+  assert.ok(result.items.every(id=>result.relatedItems.includes(id)));
+ }
+ ctx.parsed={...healthyProfile,conditionCodes:[8]};
+ const blocked=await vm.runInContext("getRecommendationResult('energy-a',parsed)",ctx);
+ assert.ok(blocked.relatedItems.length>0);assert.equal(blocked.items.length,0);
+ assert.equal(blocked.productExclusions.length,blocked.relatedItems.length);
+ ctx.parsed=healthyProfile;
+ const allowed=await vm.runInContext("getRecommendationResult('energy-a',parsed)",ctx);
+ assert.ok(allowed.items.length>0);
 });
 test('disabled products stay absent from search and id lookup; authoritative empty DB does not resurrect samples', async () => {
   const ctx=recommendationContext();
@@ -214,7 +234,7 @@ test('mobile history uses authenticated JWT and excludes other users/failures', 
   vm.runInContext(strip(read('health-app-web/src/services/healthDb.js')).replace(/import\.meta\.env/g,'({VITE_SUPABASE_URL:"https://example.supabase.co",VITE_SUPABASE_ANON_KEY:"demo"})'),ctx);
   const result=await vm.runInContext('getPurchaseHistory("A","a-pass")',ctx);
   assert.equal(result.length,1); assert.equal(result[0].member_user_id,'A');
-  assert.ok(sent.url.includes('/orders?member_user_id=eq.A&status=eq.completed'));
+  assert.ok(sent.url.endsWith('/rpc/member_purchase_history'));
   assert.equal(sent.headers.Authorization,'Bearer member-jwt');
   assert.ok(!sent.url.includes('a-pass'));
 });
@@ -243,12 +263,20 @@ test('free dispensing never calls cloud privileges from browser; gateway is requ
  const h=freeContext(()=>{throw new Error('must not run');},false);
  assert.equal((await h.call()).code,'GATEWAY_UNAVAILABLE');
 });
-test('free request forwards the agreed QR JSON without adding a separate identity field or price',async()=>{
+test('anonymous free request sends only inventory items and request ID',async()=>{
  let sent;
- const h=freeContext(async(url,options)=>{sent={url,body:JSON.parse(options.body),headers:options.headers};return {json:async()=>({ok:true,requiresReview:false})};});
- assert.equal((await h.call()).ok,true);assert.equal(sent.url,'/api/order');assert.equal(sent.body.qrProfile.id,'member');
+ const h=freeContext(async(url,options)=>{sent={url,body:JSON.parse(options.body),headers:options.headers};return {ok:true,json:async()=>({ok:true,requiresReview:false})};});
+ assert.equal((await h.call()).ok,true);assert.equal(sent.url,'/api/order');assert.deepEqual(Object.keys(sent.body).sort(),['items','requestId']);
  assert.equal(sent.body.userId,undefined);assert.equal(sent.body.price,undefined);assert.equal(sent.headers['X-Kiosk-Token'],'csrf-test');
  assert.equal(h.storage.getItem('vitamin-kiosk-pending-order'),null);
+});
+
+test('QR receipt links send only a valid account ID, never the health payload',async()=>{
+ let body;
+ const h=freeContext(async(url,options)=>{body=JSON.parse(options.body);return {ok:true,json:async()=>({ok:true,requiresReview:false})};});
+ await vm.runInContext('placeOrder(cart,"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")',h.ctx);
+ assert.deepEqual(Object.keys(body).sort(),['historyUserId','items','requestId']);
+ assert.equal(body.historyUserId,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
 });
 test('free double-click is blocked and unknown output keeps durable recovery reference',async()=>{
  let reject;const h=freeContext(()=>new Promise((resolve,r)=>{reject=r;}));

@@ -1,5 +1,7 @@
 > 2026-10-28 추가: 사용자 요청으로 현재 공개 설정만 담긴 두 `.env`와 소스 백업 6개를 Git에 포함했습니다. 범위와 구분은 [LOCAL_BACKUPS.md](../LOCAL_BACKUPS.md)를 참고하세요. 기기 인증키·실행 journal은 포함하지 않습니다.
 
+> 2026-10-29: 재고를 보존하며 20슬롯과 QR/회원정보 분리를 원격 적용했습니다. [최신 안내](../SOFTWARE_HANDOFF.md). 아래는 이전 적용 이력입니다.
+
 # 현재 DB 연결과 적용 기록
 
 2026-10-28 기준. 같은 Supabase 프로젝트를 두 웹과 Pi gateway가 사용합니다. `.env`와 기기 비밀 설정은 Git에 올리지 않습니다.
@@ -33,4 +35,4 @@
 
 모바일은 VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY, 키오스크는 REACT_APP_SUPABASE_URL/REACT_APP_SUPABASE_ANON_KEY 공개 키를 사용합니다. Pi 설정 예제는 `deployment/device.example.json`입니다. secret/service_role 키를 웹 변수에 넣지 않습니다.
 
-상태와 현장 검증 잔여 항목은 [STATUS.md](../STATUS.md)를 참고합니다.
+상태와 현장 검증 잔여 항목은 [SOFTWARE_HANDOFF.md](../SOFTWARE_HANDOFF.md)를 참고합니다. 이번 변경 파일은 `migrations/20261029004140_inventory_only_vending.sql`입니다.

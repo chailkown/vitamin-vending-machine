@@ -6,7 +6,8 @@ class Cloud:
  def rpc(self,name,body):
   self.calls.append((name,body))
   if self.reject:raise m.Rejected('DB rejected')
-  if name=='reserve_free_order':return {'order_id':'11111111-1111-4111-8111-111111111111','status':'dispensing','items':[{'dispenser_slot':self.slot,'quantity':1}]}
+  if name=='cancel_unreceived_free_order':return {'status':'cancelled'}
+  if name in ('reserve_free_order','reserve_free_order_with_history'):return {'order_id':'11111111-1111-4111-8111-111111111111','status':'dispensing','items':[{'dispenser_slot':self.slot,'quantity':1}]}
   if self.finalize_fail:raise RuntimeError('lost')
   return {'status':body['p_result']}
 class Motor:
@@ -31,6 +32,24 @@ class Tests(unittest.TestCase):
   self.cloud.finalize_fail=True;r=self.g.order(self.data);self.assertTrue(r['requiresReview']);self.assertEqual(len(self.motor.runs),1)
  def test_invalid_request_never_calls_db(self):
   self.data['items'][0]['quantity']=True;self.assertFalse(self.g.order(self.data)['ok']);self.assertEqual(self.cloud.calls,[])
+ def test_qr_identity_is_rejected_before_db(self):
+  self.data['qrProfile']={'id':'member'};self.assertFalse(self.g.order(self.data)['ok']);self.assertEqual(self.cloud.calls,[])
+ def test_history_id_only_and_replay_owner_protected(self):
+  self.data['historyUserId']=str(uuid.uuid4())
+  self.assertTrue(self.g.order(self.data)['ok'])
+  name,body=self.cloud.calls[0];self.assertEqual(name,'reserve_free_order_with_history')
+  self.assertEqual(set(body),{'p_request_id','items','p_history_user_id'})
+  self.data['historyUserId']=str(uuid.uuid4())
+  self.assertTrue(self.g.order(self.data)['requiresReview']);self.assertEqual(len(self.motor.runs),1)
+ def test_invalid_history_id_never_calls_db(self):
+  self.data['historyUserId']='not-a-user-id';self.assertFalse(self.g.order(self.data)['ok']);self.assertEqual(self.cloud.calls,[])
+ def test_cancel_unreceived_blocks_delayed_order_after_restart(self):
+  result=self.g.reconcile(self.data['requestId']);self.assertFalse(result['requiresReview'])
+  again=m.Gateway(self.cloud,self.motor,self.path,{'1':100})
+  self.assertFalse(again.order(self.data)['ok']);self.assertEqual(self.motor.runs,[])
+  self.assertEqual([c[0] for c in self.cloud.calls],['cancel_unreceived_free_order'])
+ def test_reconcile_completed_never_dispenses(self):
+  self.g.order(self.data);self.assertFalse(self.g.reconcile(self.data['requestId'])['requiresReview']);self.assertEqual(len(self.motor.runs),1)
  def test_changed_request_id_content_rejected(self):
   self.g.order(self.data);self.data['items'][0]['quantity']=2;self.assertTrue(self.g.order(self.data)['requiresReview']);self.assertEqual(len(self.motor.runs),1)
  def test_http_csrf_and_private_file_block(self):

@@ -20,6 +20,10 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
 
   const mounted = useRef(true);
   const submitting = useRef(false);
+  const qrInputRef = useRef(null);
+  useEffect(() => {
+    if (showConfirm) qrInputRef.current?.focus();
+  }, [showConfirm]);
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
@@ -151,19 +155,21 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
           <div className="confirm-modal qr-input-modal" role="dialog" aria-modal="true" aria-labelledby="qr-title">
             <div className="confirm-body">
               <h3 id="qr-title">건강정보 QR을 사용하시겠습니까?</h3>
-              <p className="qr-input-help">앱 QR로 질환·약물·알레르기를 검토합니다. QR 없이 진행하면 일반 정보만 제공하며 개인별 안전성을 확인할 수 없습니다.</p>
+              <p className="qr-input-help">휴대폰 웹사이트의 QR로 질환·약물·알레르기를 검토합니다. QR 없이 진행하면 일반 정보만 제공하며 개인별 안전성을 확인할 수 없습니다.</p>
               <textarea
+                ref={qrInputRef}
                 className="qr-input"
                 value={qrInput}
                 onChange={(event) => setQrInput(event.target.value)}
                 aria-label="QR 데이터"
                 autoFocus
-                placeholder="USB QR 스캐너로 입력하거나 앱 QR JSON을 붙여넣으세요"
+                placeholder="USB QR 스캐너로 입력하거나 건강정보 QR JSON을 붙여넣으세요"
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submitQrRecommendation(); }
                 }}
               />
               {qrError && <p className="qr-input-error">{qrError}</p>}
+              <button type="button" className="confirm-back" onClick={()=>qrInputRef.current?.focus()}>스캐너 입력 준비</button>
             </div>
             <div className="confirm-actions">
               <button

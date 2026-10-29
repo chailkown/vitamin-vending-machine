@@ -111,7 +111,7 @@ select {
 
 .auth-tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   padding: 5px;
   border-radius: 12px;
@@ -802,6 +802,17 @@ select {
   gap: 10px;
   overflow: auto;
 }
+
+[hidden] { display: none !important; }
+.admin-panel > * { flex-shrink: 0; }
+.admin-inventory .machine-admin-card { grid-template-columns: minmax(0, 1fr); }
+.admin-inventory { padding-bottom: 24px; }
+.admin-inventory h2 { margin: 4px 0; }
+.admin-inventory > p { margin: 4px 0; }
+.admin-view-tabs { display: flex; gap: 8px; padding: 0 18px 10px; }
+.admin-view-tabs button { flex: 1; min-height: 42px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.admin-view-tabs button[aria-pressed="true"] { background: var(--ink); color: white; }
+.admin-inventory button:disabled { opacity: .5; cursor: wait; }
 
 .admin-summary {
   min-height: 46px;

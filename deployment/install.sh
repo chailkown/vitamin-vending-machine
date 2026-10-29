@@ -3,6 +3,9 @@ set -euo pipefail
 bundle="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 runtime="$HOME/.local/share/vitamin-vending"
 python3 -c 'import serial' || { echo '먼저 sudo apt install -y python3-serial 를 실행하세요.'; exit 1; }
+if ! test -f "$runtime/pi/device.json" && ! test -f "$bundle/pi/device.json"; then
+ echo '기존 Pi device.json이 없습니다. 기기 인증 설정을 먼저 준비해주세요.'; exit 1
+fi
 if ! id -nG | tr ' ' '\n' | grep -qx dialout; then echo 'sudo usermod -aG dialout "$USER" 실행 후 SSH를 종료하고 다시 접속하세요.'; exit 1; fi
 systemctl --user stop vitamin-kiosk vitamin-mobile 2>/dev/null || true
 python3 - <<'PY'
@@ -15,14 +18,22 @@ for port in (3000,3001):
 PY
 mkdir -p "$runtime/pi/kiosk" "$runtime/mobile" "$HOME/.config/systemd/user"
 chmod 700 "$runtime" "$runtime/pi"
-if test -f "$runtime/pi/device.json"; then
+if test -f "$runtime/pi/device.json" && test -f "$bundle/pi/device.json"; then
  python3 - "$runtime/pi/device.json" "$bundle/pi/device.json" <<'PY'
 import json,sys
 old,new=(json.load(open(path)) for path in sys.argv[1:])
 if old['device_id']!=new['device_id'] or old['device_token']!=new['device_token']:raise SystemExit('기존 기기 인증이 다릅니다. 설정을 덮어쓰지 않습니다.')
 PY
-else cp "$bundle/pi/device.json" "$runtime/pi/device.json"; fi
+elif ! test -f "$runtime/pi/device.json"; then cp "$bundle/pi/device.json" "$runtime/pi/device.json"; fi
 chmod 600 "$runtime/pi/device.json"
+python3 - "$runtime/pi/device.json" <<'PY'
+import json,os,sys
+from pathlib import Path
+path=Path(sys.argv[1]);config=json.loads(path.read_text());durations=config.setdefault('durations',{})
+for slot in range(1,21):durations.setdefault(str(slot),500)
+if any(type(v) is not int or not 100<=v<=5000 for v in durations.values()):raise SystemExit('모터 시간 설정 오류')
+temp=path.with_suffix('.json.tmp');temp.write_text(json.dumps(config,indent=2));temp.chmod(0o600);os.replace(temp,path)
+PY
 for file in server.py recover.py test_gateway.py open_kiosk.sh set_runtime.py; do cp "$bundle/pi/$file" "$runtime/pi/$file"; done
 cp -R "$bundle/pi/kiosk/." "$runtime/pi/kiosk/"
 cp -R "$bundle/mobile/." "$runtime/mobile/"

@@ -22,3 +22,5 @@ Thumbs.db
 **/journal.sqlite3*
 **/gateway.lock
 **/__pycache__/
+.tools/
+**/supabase/.temp/

@@ -49,8 +49,8 @@ test('active kiosk resets after 60 seconds and activity postpones idle reset',as
 test('pending order prevents double-click, closing, home and idle reset; success resets on confirm',async()=>{
   let resolve;
   placeOrder.mockImplementation(()=>new Promise(done=>{resolve=done;}));
-  await enter(); await click('파우치 담기'); await click('무료 배출');
-  const submit=container.querySelector('.payment-submit');
+  await enter(); await click('파우치 담기');
+  const submit=button('구매하기');
   await act(async()=>{submit.click();submit.click();});
   expect(placeOrder).toHaveBeenCalledTimes(1);
   expect(container.querySelector('.payment-close').disabled).toBe(true);
@@ -58,13 +58,13 @@ test('pending order prevents double-click, closing, home and idle reset; success
   await act(async()=>jest.advanceTimersByTime(61_000));
   expect(container.querySelector('.purchase-screen')).not.toBeNull();
   await act(async()=>resolve({ok:true,orderId:'x',totalAmount:320,totalQty:2}));
-  expect(container.textContent).toContain('배출 명령 완료');
-  expect(placeOrder.mock.calls[0][1].qrProfile).toBeNull();
+  expect(container.textContent).toContain('구매 완료');
+  expect(placeOrder.mock.calls[0]).toHaveLength(2);
   await click('확인'); expect(container.querySelector('.main-screen')).not.toBeNull();
 });
 test('DB failure displays failure and keeps session/cart for retry',async()=>{
   placeOrder.mockResolvedValue({ok:false,message:'DB 연결 실패'});
-  await enter(); await click('파우치 담기'); await click('무료 배출'); await click('배출 시작');
+  await enter(); await click('파우치 담기'); await click('구매하기');
   expect(container.textContent).toContain('DB 연결 실패');
   expect(container.textContent).not.toContain('배출 명령 완료');
   expect(container.querySelector('.cart-item')).not.toBeNull();
