@@ -1,3 +1,5 @@
+> 현재 업로드한 Mega의 전체 핀 배치·배선·실물 확인 현황: [ARDUINO_WIRING.md](ARDUINO_WIRING.md) (2026-10-29).
+
 > 2026-10-28 추가: 사용자 요청으로 현재 공개 설정만 담긴 두 `.env`와 소스 백업 6개를 Git에 포함했습니다. 범위와 구분은 [LOCAL_BACKUPS.md](LOCAL_BACKUPS.md)를 참고하세요. 기기 인증키·실행 journal은 포함하지 않습니다.
 
 # 영양제 무료 배출 시스템
