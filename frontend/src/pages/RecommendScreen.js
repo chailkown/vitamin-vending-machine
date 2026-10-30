@@ -15,18 +15,42 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
   const [pendingSub, setPendingSub] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState('');
-  const [qrInput, setQrInput] = useState('');
+  const [waiting, setWaiting] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(30);
   const [qrError, setQrError] = useState('');
 
   const mounted = useRef(true);
   const submitting = useRef(false);
-  const qrInputRef = useRef(null);
+  const scanBuffer = useRef('');
+  const attempt = useRef(0);
+  const deadline = useRef(0);
+  const cancelScan = () => {
+    attempt.current += 1; submitting.current = false;
+    scanBuffer.current = ''; setWaiting(false); setScanning(false);
+    setQrError(''); setShowConfirm(true);
+  };
+  const startScan = () => {
+    attempt.current += 1; submitting.current = false; scanBuffer.current = '';
+    deadline.current = Date.now() + 30000;
+    setSecondsLeft(30); setQrError(''); setShowConfirm(false); setWaiting(true);
+  };
   useEffect(() => {
-    if (showConfirm) qrInputRef.current?.focus();
-  }, [showConfirm]);
+    if (!waiting) return undefined;
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((deadline.current-Date.now())/1000));
+      setSecondsLeft(left);
+      if (!left) {
+        attempt.current += 1; submitting.current=false; scanBuffer.current='';
+        setWaiting(false); setShowConfirm(true);
+        setQrError('스캔 대기시간이 끝났습니다. 다시 선택해주세요.');
+      }
+    };
+    const timer=setInterval(tick,200);
+    return () => clearInterval(timer);
+  }, [waiting]);
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; };
+    return () => { mounted.current = false; attempt.current += 1; };
   }, []);
 
   useEffect(() => {
@@ -62,32 +86,44 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
     };
   };
 
-  const submitQrRecommendation = async () => {
-    if (submitting.current) return;
+  const submitQrRecommendation = async (raw) => {
+    if (submitting.current || Date.now() >= deadline.current) return;
     submitting.current = true;
-    let parsed;
-    try { parsed = await resolveQrPayload(qrInput); } catch { setQrError('QR 서버에 연결하지 못했습니다.'); submitting.current=false; return; }
-    submitting.current = false;
-    if (!parsed.ok) {
-      setQrError(parsed.message);
-      return;
-    }
-
-    setQrError('');
-    setShowConfirm(false);
-    setScanning(true);
-    setScanMessage('QR 데이터 분석 중...');
-    submitting.current = true;
+    const current=attempt.current;
+    const valid=()=>mounted.current && current===attempt.current;
     try {
-      const combo = {...await buildCombo(pendingSub, parsed.profile), qrData:parsed.raw};
-      if (mounted.current && typeof onGoToPurchase === 'function') onGoToPurchase(combo);
+      const parsed=await resolveQrPayload(raw);
+      if (!valid()) return;
+      if (!parsed.ok) { setQrError('QR을 인식하지 못했습니다. 다시 스캔해주세요.'); return; }
+      setWaiting(false); setScanning(true); setScanMessage('추천을 불러오는 중...');
+      const combo={...await buildCombo(pendingSub,parsed.profile),qrData:parsed.raw};
+      if (valid()) onGoToPurchase?.(combo);
     } catch {
-      if (mounted.current) { setShowConfirm(true); setQrError('추천 데이터를 불러오지 못했습니다. 다시 시도해주세요.'); }
+      if (valid()) { setWaiting(false); setShowConfirm(true); setQrError('추천을 불러오지 못했습니다. 다시 시도해주세요.'); }
     } finally {
-      submitting.current = false;
-      if (mounted.current) setScanning(false);
+      if(valid()) {submitting.current=false;setScanning(false);}
     }
   };
+
+  // USB HID scanner sends characters followed by Enter; there is no editable field.
+  useEffect(() => {
+    const onKey = event => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.key.length!==1 && event.key!=='Enter' && event.key!=='Backspace') return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (!waiting || submitting.current || Date.now()>=deadline.current) return;
+      if(event.key==='Enter') {
+        const raw=scanBuffer.current;scanBuffer.current='';
+        if(raw)submitQrRecommendation(raw);
+      } else if(event.key==='Backspace') scanBuffer.current=scanBuffer.current.slice(0,-1);
+      else {
+        if(event.key==='{')scanBuffer.current='';
+        if(scanBuffer.current.length<1800)scanBuffer.current+=event.key;
+      }
+    };
+    window.addEventListener('keydown',onKey,true);
+    return ()=>window.removeEventListener('keydown',onKey,true);
+  });
 
   const continueWithoutQr = async () => {
     if (submitting.current) return;
@@ -142,7 +178,7 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
             <div className="sub-list">
               {selectedCategory.symptoms.map((symptom) => (
                 <button type="button" key={symptom.code} className="sub-btn" onClick={() => {
-                  setPendingSub(symptom.code); setQrInput(''); setQrError(''); setShowConfirm(true);
+                  setPendingSub(symptom.code); scanBuffer.current=''; setQrError(''); setShowConfirm(true);
                 }}>{symptom.label}</button>
               ))}
             </div>
@@ -155,39 +191,37 @@ export default function RecommendScreen({ onBack, onGoToPurchase }) {
           <div className="confirm-modal qr-input-modal" role="dialog" aria-modal="true" aria-labelledby="qr-title">
             <div className="confirm-body">
               <h3 id="qr-title">건강정보 QR을 사용하시겠습니까?</h3>
-              <p className="qr-input-help">휴대폰 웹사이트의 QR로 질환·약물·알레르기를 검토합니다. QR 없이 진행하면 일반 정보만 제공하며 개인별 안전성을 확인할 수 없습니다.</p>
-              <textarea
-                ref={qrInputRef}
-                className="qr-input"
-                value={qrInput}
-                onChange={(event) => setQrInput(event.target.value)}
-                aria-label="QR 데이터"
-                autoFocus
-                placeholder="USB QR 스캐너로 입력하거나 건강정보 QR JSON을 붙여넣으세요"
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submitQrRecommendation(); }
-                }}
-              />
-              {qrError && <p className="qr-input-error">{qrError}</p>}
-              <button type="button" className="confirm-back" onClick={()=>qrInputRef.current?.focus()}>스캐너 입력 준비</button>
+              <p className="qr-input-help">QR을 사용하면 건강정보를 함께 반영합니다. 아니요를 누르면 선택한 상황으로 추천합니다.</p>
+              {qrError && <p className="qr-input-error" role="alert">{qrError}</p>}
             </div>
             <div className="confirm-actions">
               <button
                 type="button"
                 className="confirm-yes"
-                onClick={submitQrRecommendation}
+                onClick={startScan}
               >
-                QR 반영
+                예
               </button>
               <button
                 type="button"
                 className="confirm-no"
                 onClick={continueWithoutQr}
               >
-                QR 없이 계속
+                아니요
               </button>
             </div>
             <button className="confirm-back" onClick={() => setShowConfirm(false)}>다시 선택</button>
+          </div>
+        </div>
+      )}
+
+      {waiting && (
+        <div className="overlay">
+          <div className="scanner-modal" role="dialog" aria-modal="true" aria-labelledby="scan-title">
+            <h3 id="scan-title" className="scanner-title">휴대폰 QR을 스캐너에 보여주세요</h3>
+            <p className="scan-countdown">{secondsLeft}초</p>
+            {qrError && <p className="qr-input-error" role="alert">{qrError}</p>}
+            <button className="confirm-back" onClick={cancelScan}>취소</button>
           </div>
         </div>
       )}

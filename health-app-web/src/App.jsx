@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import './App.css';
+import './MobileTheme.css';
 import AdminInventory from './components/AdminInventory';
 import {loginAdmin,logoutAdmin,adminAction} from './services/adminService';
 import { createQrDataUrl } from './services/qrImage';
@@ -71,10 +72,14 @@ const DEFAULT_PROFILE = {
   medications: '해당 없음',
 };
 
-const DISEASES = Object.keys(healthCatalog.conditions).filter((name) => name !== '해당 없음');
+// Only offer codes that affect the current active-product rules. Keep the full
+// protocol catalog intact so previously saved profiles and QR codes still decode.
+const selectableNames = (group, codes) => Object.entries(healthCatalog[group])
+  .filter(([, code]) => codes.includes(code)).map(([name]) => name);
+const DISEASES = selectableNames('conditions', [3,7,8,9,10,11,12,13,14,15,16,17]);
 const REQUIRED_FIELDS = ['name', 'age', 'height', 'weight', 'gender', 'smoking', 'alcohol', 'allergies', 'medications'];
-const ALLERGY_OPTIONS = [...Object.keys(healthCatalog.allergies), '직접 입력'];
-const MEDICATION_OPTIONS = [...Object.keys(healthCatalog.medications), '직접 입력'];
+const ALLERGY_OPTIONS = selectableNames('allergies', [0,1,2,3,4,6,7,8,9,10,11]);
+const MEDICATION_OPTIONS = selectableNames('medications', [0,6,7,8,9,10,11,12,13,14,15,18,19]);
 
 const CHOICE_SCREEN_CONFIG = {
   allergy: {
@@ -106,7 +111,7 @@ const toNumberText = (value) => String(value ?? '').replace(/\D/g, '');
 
 const loadKakaoMapSdk = () => new Promise((resolve, reject) => {
   if (!KAKAO_MAP_KEY) {
-    reject(new Error('카카오맵 JavaScript 키가 없습니다.'));
+    reject(new Error('지도를 준비하고 있습니다.'));
     return;
   }
 
@@ -119,7 +124,7 @@ const loadKakaoMapSdk = () => new Promise((resolve, reject) => {
     if (window.kakao?.maps) {
       resolve(window.kakao);
     } else {
-      reject(new Error('카카오맵 SDK가 로드됐지만 지도 객체를 찾지 못했습니다.'));
+      reject(new Error('지도를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.'));
     }
   };
 
@@ -186,7 +191,6 @@ function App() {
   const [profile, setProfile] = useState(() => ({...DEFAULT_PROFILE}));
   const [savedNotice, setSavedNotice] = useState('');
   const [healthError, setHealthError] = useState('');
-  const [qrRefresh, setQrRefresh] = useState(0);
   const [qrImage, setQrImage] = useState('');
   const [qrError, setQrError] = useState('');
   const [purchaseHistory, setPurchaseHistory] = useState([]);
@@ -245,7 +249,7 @@ function App() {
       if (!cancelled) { setQrImage(''); setQrError(error.message); }
     });
     return () => { cancelled = true; };
-  }, [activeScreen, qrRefresh, profile, session?.userId]);
+  }, [activeScreen, profile, session?.userId]);
 
   useEffect(() => {
     if (activeScreen !== 'history' || !session?.userId) return;
@@ -536,7 +540,7 @@ function App() {
     } catch (error) {
       if (epoch !== sessionEpoch.current) return;
       setSavedNotice('');
-      setHealthError(`DB 저장에 실패했습니다. ${authErrorMessage(error)}`);
+      setHealthError(`건강정보를 저장하지 못했습니다. ${authErrorMessage(error)}`);
       return;
     }
     if (epoch !== sessionEpoch.current) return;
@@ -544,7 +548,7 @@ function App() {
     setSession(nextSession);
     setNeedsHealthSetup(false);
     setLastSavedProfile(JSON.stringify(profile));
-    setSavedNotice('DB에 저장되었습니다');
+    setSavedNotice('건강정보를 저장했습니다.');
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       if (epoch !== sessionEpoch.current) return;
@@ -602,7 +606,7 @@ function App() {
       const result=await adminAction('machine_save',nextMachine);
       if(result?.ok!==true)throw new Error('저장 결과를 확인할 수 없습니다.');
       setVendingMachines(prev=>prev.some(machine=>machine.id===id)?prev.map(machine=>machine.id===id?nextMachine:machine):[...prev,nextMachine]);
-      clearMachineForm();setMachineNotice('자판기 정보가 DB에 저장되었습니다.');
+      clearMachineForm();setMachineNotice('자판기 정보를 저장했습니다.');
     } catch(error) {setMachineError(error.message);}
     finally {machineLock.current=false;setMachineBusy(false);}
   };
@@ -616,7 +620,7 @@ function App() {
       if(result?.ok!==true)throw new Error('삭제 결과를 확인할 수 없습니다.');
       setVendingMachines(prev=>prev.filter(machine=>machine.id!==machineId));
       if(machineForm.id===machineId)clearMachineForm();
-      setMachineNotice('자판기 정보가 DB에서 삭제되었습니다.');
+      setMachineNotice('자판기 정보를 삭제했습니다.');
     } catch(error) {setMachineError(error.message);}
     finally {machineLock.current=false;setMachineBusy(false);}
   };
@@ -742,12 +746,12 @@ function App() {
               <div id="kakao-map" className={`kakao-map ${!KAKAO_MAP_KEY ? 'map-fallback' : ''}`}>
                 {!KAKAO_MAP_KEY && (
                   <div className="map-key-message">
-                    <strong>카카오맵 API 키 필요</strong>
-                    <span>설정 후 실제 지도와 마커가 표시됩니다.</span>
+                    <strong>지도 준비 중</strong>
+                    <span>곧 자판기 위치를 안내해드릴게요.</span>
                   </div>
                 )}
               </div>
-              {mapStatus && <p className="db-notice">{mapStatus}</p>}
+              {KAKAO_MAP_KEY && mapStatus && <p className="db-notice">{mapStatus}</p>}
             </section>
           </>
         )}
@@ -890,7 +894,7 @@ function App() {
             <Header title="해당하는 질환" eyebrow="건강 데이터" onBack={() => setScreen('health')} />
 
             <section className="disease-wrap">
-              {DISEASES.map((item) => (
+              {[...new Set([...DISEASES, ...profile.conditions.filter(item => item !== '해당 없음')])].map((item) => (
                 <button
                   key={item}
                   className={`tag-btn ${profile.conditions.includes(item) ? 'active' : ''}`}
@@ -929,17 +933,6 @@ function App() {
             <Header title="QR코드" eyebrow="키오스크 연동" onBack={() => setScreen('home')} />
             <section className="qr-screen-panel">
               <h2>{profile.name}</h2>
-              <button
-                className="qr-refresh"
-                type="button"
-                onClick={() => {
-                  setQrImage(''); setQrError(''); setQrRefresh((value) => value + 1);
-                }}
-                aria-label="QR 다시 표시"
-              >
-                <span aria-hidden="true">↻</span>
-              </button>
-              <p>시간 제한 없이 사용할 수 있는 건강정보 QR입니다. 기저질환·알레르기·복용 약물은 각각 한 가지 코드로 전달합니다.</p>
               <div className="qr-image-wrap">
                 {qrError ? <p role="alert">{qrError}</p>
                   : qrImage ? <img className="qr-image" src={qrImage} alt="키오스크 전달용 건강정보 QR코드" /> : <p>QR 생성 중...</p>}
@@ -1083,7 +1076,7 @@ function ChoiceOptionScreen({ config, mode, value, onBack, onSelect, onCustomCha
       <Header title={config.title} eyebrow={config.eyebrow} onBack={onBack} />
       <section className="choice-option-wrap">
         <p>해당하는 항목을 한 가지 선택해주세요. 약은 가능하면 구체적인 성분·종류를 선택해주세요.</p>
-        {config.options.map((option) => (
+        {[...new Set([...config.options, ...selected.filter(item => item && item !== '직접 입력')])].map((option) => (
           <button
             key={option}
             className={`tag-btn ${(option === '직접 입력' ? mode === option || custom : selected.includes(option)) ? 'active' : ''}`}
@@ -1095,7 +1088,7 @@ function ChoiceOptionScreen({ config, mode, value, onBack, onSelect, onCustomCha
           </button>
         ))}
 
-      {(mode === '직접 입력' || custom) && (
+      {config.options.includes('직접 입력') && (mode === '직접 입력' || custom) && (
           <input
             className="choice-detail choice-detail-full"
             value={value === '해당 없음' ? '' : value}

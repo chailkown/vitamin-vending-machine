@@ -10,6 +10,10 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
   const [activeCategory, setActiveCategory] = useState(null);
   const [vitamins, setVitamins] = useState([]);
   const [cart, setCart] = useState([]);
+  const [cartPage, setCartPage] = useState(0);
+  const cartPageCount = Math.max(1, Math.ceil(cart.length / 2));
+  const visibleCartPage = Math.min(cartPage, cartPageCount - 1);
+  useEffect(() => { setCartPage(page => Math.min(page, cartPageCount - 1)); }, [cartPageCount]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
   const [showPayment, setShowPayment] = useState(false);
@@ -19,6 +23,8 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
   const ordering = useRef(false);
   const refreshInventory = useRef(() => {});
   const safetyExclusions = useMemo(() => {
+    // Direct selection is ordinary vending; health rules apply only to recommendation sessions.
+    if (!recommendedCombo) return {};
     const profile = recommendedCombo?.qrProfile;
     const result = assessRecommendedProducts(vitamins, profile, profile ? getQrProfileRules(profile) : null);
     const excluded = Object.fromEntries(result.excluded.map((p) => [p.id, p.reason]));
@@ -99,8 +105,6 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
     );
   };
 
-  const recommendationReasons = recommendedCombo?.nutrientExplanations || {};
-  const qrRules = recommendedCombo?.qrRules || null;
 
   const openPayment = () => {
     if (ordering.current || showPayment) return;
@@ -153,7 +157,7 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
             className={`tab ${activeCategory === category ? 'active' : ''}`}
             onClick={() => setActiveCategory(category)}
           >
-            {category === '비타민 B-Complex' ? '비타민 B군' : category}
+            {category === '비타민 B-Complex' ? '비타민 B군' : category === '루테인/제아잔틴' ? '루테인' : category}
           </button>
         ))}
       </div>
@@ -169,52 +173,7 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
               <h3>관련 영양제 · 추천 가능 {(recommendedCombo.items || []).length}개 상품</h3>
               <p className="recommend-brief">{recommendedCombo.guidance || '식사 보완 후보입니다. 이용 전 주의사항을 확인해주세요.'}</p>
               {!recommendedCombo.items?.length && <p role="status">현재 정보로 자동 추천할 상품이 없습니다. 관련 후보는 참고용이며 추천·배출이 제한됩니다.</p>}
-              <details className="recommend-details">
-                <summary>주의사항·추천 근거 보기</summary>
-                <div className="recommend-details-body">
-              <p>{recommendedCombo.guidance}</p>
-              {(recommendedCombo.warnings || []).map((warning) => <p key={warning}>{warning}</p>)}
-              {!recommendedCombo.items?.length && <p role="status">현재 정보로 자동 추천할 상품이 없습니다. 제외 사유를 확인하고 필요한 경우 의사·약사에게 상담해주세요.</p>}
-              {(recommendedCombo.productExclusions || []).map((product) => <p key={product.id}>{product.name}: {product.reason}</p>)}
-              <div>{(recommendedCombo.sources || []).map((source) => <p key={source.url}><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a></p>)}</div>
-              {recommendedCombo.qrProfile ? (
-                <p className="recommend-selected">
-                  QR 기준: {recommendedCombo.qrProfile.name} / {recommendedCombo.qrProfile.age}세 / {recommendedCombo.qrProfile.gender}
-                  {' '}({recommendedCombo.qrProfile.height}cm, {recommendedCombo.qrProfile.weight}kg, 흡연: {recommendedCombo.qrProfile.smoking ? '예' : '아니요'}, 음주 단계: {recommendedCombo.qrProfile.alcohol})
-                </p>
-              ) : null}
-              {qrRules ? (
-                <div className="recommend-qr-rules">
-                  <div>기저질환: {qrRules.labels.condition}</div>
-                  <div>알러지: {qrRules.labels.allergy}</div>
-                  <div>복용약물: {qrRules.labels.medication}</div>
-                  {qrRules.addedNutrients.length > 0 && (
-                    <div>QR 추가: {qrRules.addedNutrients.join(', ')}</div>
-                  )}
-                  {qrRules.excludedNutrients.length > 0 && (
-                    <div className="recommend-excluded">QR 제외: {qrRules.excludedNutrients.join(', ')}</div>
-                  )}
-                  {(qrRules.warnings || []).map((warning) => <div className="recommend-excluded" key={warning}>{warning}</div>)}
-                </div>
-              ) : null}
-              {recommendedCombo.selectedSub ? (
-                <p className="recommend-selected">선택 증상: {recommendedCombo.selectedSub}</p>
-              ) : null}
-              <div className="recommend-nutrients">
-                {(recommendedCombo.nutrients || []).map((nutrient) => (
-                  <div key={nutrient} className="recommend-nutrient-item">
-                    <strong>{nutrient}</strong>
-                    <span>{recommendationReasons[nutrient] || '제품 성분과 개인별 섭취 필요성을 확인해주세요.'}</span>
-                    {recommendedCombo.nutrientPrecautions?.[nutrient] ? (
-                      <div className="recommend-precaution">
-                        주의: {recommendedCombo.nutrientPrecautions[nutrient]}
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-                </div>
-              </details>
+
             </div>
           )}
 
@@ -228,16 +187,6 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
                   />
                 </div>
                 <div className="card-name">{product.name}</div>
-                <div className="card-desc">{product.description || '제품 성분과 함량을 확인해주세요.'}</div>
-                {activeCategory === '추천' && product.category ? (
-                  <div className="card-reason">{safetyExclusions[product.id] ? '참고 정보 · 배출 제한' : '식사 보완 후보'}: {product.category}</div>
-                ) : null}
-                {activeCategory === '추천' && product.category ? (
-                  <div className="card-reason-desc">
-                    {recommendationReasons[product.category] || '개인별 섭취 필요성을 확인해주세요.'}
-                  </div>
-                ) : null}
-                <div className="card-price">무료 제공</div>
                 {product.stock != null && product.stock <= 10 && (
                   <div className="card-stock">재고 {product.stock}개</div>
                 )}
@@ -246,9 +195,8 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
                   onClick={() => addToCart(product)}
                   disabled={product.stock === 0 || Boolean(safetyExclusions[product.id]) || !product.dispenser_slot}
                 >
-                  {product.stock === 0 ? '품절' : safetyExclusions[product.id] ? '상담·성분 확인 필요' : !product.dispenser_slot ? '모터 연결 준비 중' : '파우치 담기'}
+                  {product.stock === 0 ? '품절' : safetyExclusions[product.id] ? '선택 불가' : !product.dispenser_slot ? '준비 중' : '장바구니 담기'}
                 </button>
-                {safetyExclusions[product.id] && <p className="recommend-excluded">{safetyExclusions[product.id]}</p>}
               </div>
             ))}
           </div>
@@ -263,7 +211,7 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
           {cart.length === 0 ? (
             <div className="empty-cart">장바구니에 담긴 제품이 없습니다.</div>
           ) : (
-            cart.map((item) => (
+            cart.slice(visibleCartPage * 2, visibleCartPage * 2 + 2).map((item) => (
               <div key={item.product.id} className="cart-item">
                 <div className="cart-item-info">
                   <div className="cart-item-name">{item.product.name}</div>
@@ -280,6 +228,15 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
           )}
         </div>
 
+        {cartPageCount > 1 && (
+          <div className="cart-pager" aria-label="장바구니 페이지">
+            <button type="button" aria-label="장바구니 이전 상품" disabled={visibleCartPage === 0}
+              onClick={() => setCartPage(visibleCartPage - 1)}>▲</button>
+            <span aria-live="polite">{visibleCartPage + 1} / {cartPageCount}</span>
+            <button type="button" aria-label="장바구니 다음 상품" disabled={visibleCartPage === cartPageCount - 1}
+              onClick={() => setCartPage(visibleCartPage + 1)}>▼</button>
+          </div>
+        )}
         <div className="cart-summary">
           <div className="cart-total-label">선택 수량</div>
           <div className="cart-total-amount">{cart.reduce((sum,item)=>sum+item.qty,0)}개</div>
@@ -302,7 +259,7 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
           onClick={openPayment}
           disabled={showPayment || cart.length === 0}
         >
-          구매하기 (무료)
+          구매하기
         </button>
       </div>
 

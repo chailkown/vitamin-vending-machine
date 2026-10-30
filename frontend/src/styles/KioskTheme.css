@@ -1,0 +1,168 @@
+/* Shared touch-screen presentation. Business rules live in the page/services. */
+:root { --k-ink:#193c38; --k-muted:#617570; --k-green:#176b58; --k-line:#dce7e1; --k-paper:#f5f7f2; }
+body { background:var(--k-paper); color:var(--k-ink); }
+button { font-family:inherit; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+button:focus-visible { outline:3px solid #c08630; outline-offset:3px; }
+button:active:not(:disabled) { transform:translateY(1px); filter:brightness(.96); }
+.main-screen,.recommend-screen,.purchase-screen { color:var(--k-ink); background:var(--k-paper); }
+.main-screen { background:radial-gradient(ellipse at 100% 0%,#dbece0,transparent 55%),var(--k-paper); padding:32px max(24px,5vw); }
+.main-screen .header { max-width:900px; text-align:left; margin-bottom:32px; }
+.main-screen .logo-icon { display:inline-flex; align-items:center; justify-content:center; width:64px; height:64px; border-radius:22px; background:#e4ede4; font-size:34px; margin-bottom:20px; }
+.main-screen .title { color:var(--k-ink); font-size:clamp(30px,4.6vw,48px); letter-spacing:-1.8px; margin-bottom:12px; }
+.main-screen .subtitle { color:var(--k-muted); font-size:clamp(16px,2vw,20px); }
+.main-screen .main-content { max-width:900px; }
+.main-screen .button-container { gap:18px; grid-template-rows:repeat(2,minmax(145px,20vh)); }
+.main-screen .main-btn { padding:28px; border-radius:24px; box-shadow:0 8px 24px #193c3809; border:1px solid var(--k-line); }
+.main-screen .purchase-btn { background:#fff; }
+.main-screen .purchase-btn .btn-label { color:var(--k-ink); }
+.main-screen .purchase-btn .btn-description { color:var(--k-muted); }
+.main-screen .recommend-btn { background:var(--k-green); border-color:var(--k-green); }
+.main-screen .btn-label { font-size:clamp(25px,3.8vw,34px); letter-spacing:-.8px; }
+.main-screen .btn-description { font-size:clamp(15px,2vw,18px); }
+.main-screen .btn-icon { display:flex; align-items:center; justify-content:center; width:76px; height:76px; border-radius:24px; background:#eef4ee; font-size:38px; }
+.main-screen .recommend-btn .btn-icon { background:#ffffff1a; }
+.recommend-screen .rec-header { padding:20px 24px; gap:20px; border-color:var(--k-line); }
+.recommend-screen .back-btn { min-height:52px; padding:12px 22px; font-size:16px; background:#edf3ef; color:var(--k-ink); border-radius:14px; font-weight:700; }
+.recommend-screen .rec-title { font-size:clamp(23px,3vw,32px); letter-spacing:-1px; }
+.recommend-screen .rec-content { padding:24px; }
+.recommend-screen .rec-hint { font-size:16px; color:var(--k-muted); margin-bottom:20px; }
+.recommend-screen .large-cats { gap:12px; }
+.recommend-screen .large-card { min-height:88px; padding:18px; gap:14px; border-radius:18px; border-color:var(--k-line); box-shadow:0 3px 12px #193c3804; }
+.recommend-screen .large-card-title { font-size:18px; }
+.recommend-screen .rec-emoji { font-size:32px; }
+.recommend-screen .large-card.active { background:#e4f1e9; border:2px solid var(--k-green); padding:17px; }
+.recommend-screen .sub-selection { border-color:var(--k-line); margin-top:24px; padding-top:22px; }
+.recommend-screen .sub-selection h3 { font-size:22px; margin-bottom:16px; }
+.recommend-screen .sub-list { gap:10px; }
+.recommend-screen .sub-btn { min-height:62px; padding:16px 20px; font-size:18px; border-radius:14px; border-color:var(--k-line); color:var(--k-ink); }
+.recommend-screen .overlay,.payment-overlay { background:#102e28a6; backdrop-filter:blur(5px); }
+.recommend-screen .confirm-modal,.recommend-screen .scanner-modal,.payment-modal { max-width:540px; border-radius:28px; padding:32px; box-shadow:0 24px 80px #102e2826; }
+.recommend-screen .confirm-body h3,.recommend-screen .scanner-title { font-size:25px; color:var(--k-ink); line-height:1.45; }
+.recommend-screen .qr-input-help { font-size:17px; }
+.recommend-screen .qr-input-error { font-size:16px; }
+.recommend-screen .confirm-actions { gap:12px; margin-top:24px; }
+.recommend-screen .confirm-actions button { min-height:64px; font-size:20px; font-weight:700; border-radius:16px; }
+.recommend-screen .confirm-yes { background:var(--k-green); }
+.recommend-screen .confirm-no { color:var(--k-ink); background:#eaf1ec; }
+.recommend-screen .confirm-back { min-height:52px; font-size:17px; margin-top:16px; }
+.recommend-screen .scan-countdown { color:var(--k-green); font-size:72px; font-variant-numeric:tabular-nums; }
+.purchase-screen { padding-inline:max(16px,3vw); }
+.purchase-screen .tabs { background:var(--k-paper); padding:16px 0; gap:8px; max-height:220px; border-color:var(--k-line); }
+.purchase-screen .tab { min-height:52px; padding:10px 8px; font-size:15px; font-weight:600; background:#fff; border-color:var(--k-line); border-radius:12px; color:var(--k-muted); }
+.purchase-screen .tab.active { background:var(--k-green); color:#fff; border-color:var(--k-green); }
+.purchase-screen .products { padding:20px 0; gap:16px; }
+.purchase-screen .card { padding:18px; border-radius:22px; border-color:var(--k-line); box-shadow:0 4px 18px #193c3805; }
+.purchase-screen .card-image { height:130px; margin-bottom:16px; padding:10px; background:#f7f9f5; border-radius:14px; }
+.purchase-screen .card-name { font-size:18px; min-height:50px; color:var(--k-ink); word-break:keep-all; }
+.purchase-screen .card-stock { font-size:14px; color:var(--k-muted); margin:10px 0; }
+.purchase-screen .card-button { min-height:54px; background:var(--k-green); font-size:17px; font-weight:700; border-radius:12px; }
+.purchase-screen button:disabled { opacity:.48; }
+.purchase-screen .bottom-section { padding:16px; border:1px solid var(--k-line); border-radius:20px 20px 0 0; max-height:32vh; }
+.purchase-screen .cart-item { grid-template-columns:minmax(0,1fr) 188px; gap:12px; padding:10px 0; }
+.purchase-screen .cart-item-name { font-size:16px; }
+.purchase-screen .cart-item-controls { grid-template-columns:44px 32px 44px 44px; gap:8px; }
+.purchase-screen .qty-btn,.purchase-screen .remove-btn { width:44px; height:48px; border-radius:12px; color:var(--k-green); background:#f0f5f0; border-color:var(--k-line); }
+.purchase-screen .remove-btn { color:#a64a3d; }
+.purchase-screen .qty-display { font-size:17px; font-weight:700; }
+.purchase-screen .empty-cart,.purchase-screen .cart-total-label { font-size:16px; }
+.purchase-screen .cart-total-amount { font-size:23px; }
+.purchase-screen .nav { height:72px; gap:10px; padding:10px 0; margin-bottom:8px; }
+.purchase-screen .nav-btn { border-radius:14px; font-size:20px; font-weight:700; }
+.purchase-screen .home-btn { background:#e4ece5; color:var(--k-ink); }
+.purchase-screen .purchase-btn { background:var(--k-green); flex:2; }
+.purchase-screen .recommend-info-panel { margin:16px 0 0; padding:18px; border-radius:18px; background:#eaf2e9; border-color:#d5e5d6; font-size:16px; }
+.purchase-screen .recommend-info-panel h3 { font-size:21px; }
+.purchase-screen .db-status { border-radius:10px; font-size:13px; padding:8px 12px; }
+.payment-submit { background:var(--k-green); min-height:58px; }
+.payment-close { width:48px; height:48px; }
+.payment-spinner { border-top-color:var(--k-green); }
+@media(min-width:1000px) and (min-height:650px) {
+  .main-screen .button-container { grid-template-columns:1fr 1fr; grid-template-rows:minmax(260px,34vh); }
+  .main-screen .main-btn { flex-direction:column-reverse; align-items:flex-start; }
+  .main-screen .btn-content { flex:0; }
+  .recommend-screen .large-cats { grid-template-columns:repeat(4,minmax(0,1fr)); }
+  .recommend-screen .sub-list { grid-template-columns:1fr 1fr; }
+}
+@media(max-width:480px) {
+  .recommend-screen .rec-header,.recommend-screen .rec-content { padding:16px; }
+  .recommend-screen .large-card { padding:12px; gap:8px; }
+  .recommend-screen .large-card.active { padding:11px; }
+  .recommend-screen .large-card-title { font-size:16px; }
+  .recommend-screen .rec-emoji { font-size:26px; }
+  .purchase-screen .card { padding:12px; }
+  .purchase-screen .card-image { height:100px; }
+  .purchase-screen .card-name { font-size:16px; }
+  .purchase-screen .card-button { font-size:15px; }
+  .purchase-screen .cart-item { grid-template-columns:1fr; }
+  .purchase-screen .cart-item-controls { justify-content:end; }
+}
+@media(max-height:600px) {
+  .main-screen .header { margin-bottom:16px; }
+  .main-screen .logo-icon { display:none; }
+  .main-screen .button-container { grid-template-rows:repeat(2,minmax(104px,20vh)); gap:12px; }
+  .main-screen .main-btn { padding:18px; }
+  .purchase-screen .tabs { display:flex; max-height:76px; }
+  .purchase-screen .tab { flex:0 0 118px; }
+  .purchase-screen .card-image { height:80px; }
+}
+
+/* Fit the category selector without a nested scroll area. */
+.purchase-screen .tabs {
+  display:grid; grid-template-columns:repeat(4,minmax(0,1fr));
+  max-height:none; overflow:visible; padding:10px 0; gap:6px;
+}
+.purchase-screen .tab { min-height:48px; padding:7px 4px; font-size:14px; }
+.purchase-screen .products { padding:12px 0; gap:12px; }
+.purchase-screen .card { padding:12px; }
+.purchase-screen .card-image { height:clamp(70px,12vh,120px); margin-bottom:8px; }
+.purchase-screen .card-name { font-size:16px; min-height:44px; }
+.purchase-screen .card-stock { margin:5px 0; }
+.purchase-screen .bottom-section { overflow:hidden; padding:10px 12px; gap:4px; }
+.purchase-screen .cart-list { min-height:0; overflow-y:auto; }
+.purchase-screen .cart-item { grid-template-columns:minmax(0,1fr) 176px; padding:5px 0; gap:8px; }
+.purchase-screen .cart-item-controls { grid-template-columns:44px 26px 44px 44px; gap:6px; }
+.purchase-screen .cart-item-name { font-size:14px; }
+.purchase-screen .cart-summary { padding:2px 0; }
+.purchase-screen .nav { margin-bottom:4px; height:66px; padding:7px 0; }
+.purchase-screen .purchase-content,.purchase-screen .cart-list,
+.recommend-screen .rec-content,.recommend-screen .confirm-modal,
+.recommend-screen .scanner-modal,.payment-modal {
+  touch-action:pan-y; -webkit-overflow-scrolling:touch; overscroll-behavior-y:contain;
+  scrollbar-width:thin; scrollbar-color:#91aaa0 transparent;
+}
+.recommend-screen .rec-header { padding:12px 16px; }
+.recommend-screen .rec-content { padding:14px 16px; }
+.recommend-screen .rec-hint { margin-bottom:10px; }
+.recommend-screen .large-cats { gap:8px; }
+.recommend-screen .large-card { min-height:62px; padding:10px 12px; gap:10px; }
+.recommend-screen .large-card.active { padding:9px 11px; }
+.recommend-screen .large-card-title { font-size:16px; }
+.recommend-screen .rec-emoji { font-size:26px; }
+.recommend-screen .sub-selection { margin-top:14px; padding-top:12px; }
+.recommend-screen .sub-selection h3 { font-size:20px; margin-bottom:8px; }
+.recommend-screen .sub-list { gap:8px; }
+.recommend-screen .sub-btn { min-height:52px; padding:12px 14px; font-size:16px; }
+@media(min-width:700px) {
+  .purchase-screen .tabs { grid-template-columns:repeat(6,minmax(0,1fr)); }
+  .recommend-screen .large-cats { grid-template-columns:repeat(4,minmax(0,1fr)); }
+  .recommend-screen .sub-list { grid-template-columns:1fr 1fr; }
+}
+@media(max-width:380px) {
+  .purchase-screen .tab { font-size:12px; }
+  .purchase-screen .cart-item { grid-template-columns:1fr; }
+}
+
+/* Two cart rows per page; arrows replace touch scrolling. */
+.purchase-screen .tab { white-space:nowrap; overflow-wrap:normal; font-size:clamp(11px,2.8vw,14px); }
+.purchase-screen .card-button { min-height:44px; padding:8px 4px; font-size:15px; }
+.purchase-screen .bottom-section { position:relative; max-height:none; overflow:visible; }
+.purchase-screen .cart-list { overflow:visible; }
+.purchase-screen .bottom-section:has(.cart-pager) { padding-right:64px; }
+.purchase-screen .cart-pager { position:absolute; right:10px; top:10px; display:flex; flex-direction:column; align-items:center; gap:3px; }
+.purchase-screen .cart-pager button { width:44px; height:44px; border:1px solid var(--k-line); border-radius:10px; background:#eaf1ec; color:var(--k-green); font-size:17px; }
+.purchase-screen .cart-pager span { font-size:12px; color:var(--k-muted); }
+.purchase-screen .cart-item { grid-template-columns:minmax(0,1fr) 164px; }
+.purchase-screen .cart-item-controls { grid-template-columns:40px 24px 40px 40px; gap:5px; }
+.purchase-screen .qty-btn,.purchase-screen .remove-btn { width:40px; height:44px; }
+.purchase-screen .cart-item-name { font-size:13px; line-height:1.4; }
+.purchase-screen .cart-summary { min-height:30px; }

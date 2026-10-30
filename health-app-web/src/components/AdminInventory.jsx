@@ -17,23 +17,23 @@ export default function AdminInventory({hidden=false}) {
   }).catch(e=>{if(live)setError(e.message);});return()=>{live=false;};},[]);
   const save=async(product,action,retry=null)=>{
     if(lock.current)return;
-    const input=values[product?.id]??'';
-    if(!retry && (!/^\d{1,6}$/.test(input) || (action==='add' && Number(input)<1))){setError('입고는 1개 이상, 재고 수정은 0 이상의 정수로 입력해주세요.');return;}
+    const input=action==='set' ? '0' : values[product?.id]??'';
+    if(!retry && (!/^\d{1,6}$/.test(input) || (action==='add' && Number(input)<1))){setError('추가할 수량을 1개 이상의 정수로 입력해주세요.');return;}
     const operation=retry || {action,data:{id:product.id,quantity:Number(input),expected:product.stock,requestId:inventoryRequestId()}};
     lock.current=true;setBusy(true);setError('');setMessage('');setPending(operation);
     try {
       const result=await adminAction(operation.action,operation.data);
       if(result?.ok!==true)throw new Error('저장 결과를 확인할 수 없습니다.');
       setPending(null);setValues(prev=>({...prev,[operation.data.id]:''}));
-      setMessage(`DB 저장 완료 · 재고 ${result.stock}개`);
+      setMessage(`재고를 반영했습니다. 현재 ${result.stock}개입니다.`);
       await refresh();
     } catch(e) {setError(`${e.message} 결과가 불명확하면 같은 요청 확인을 눌러주세요.`);}
     finally {lock.current=false;setBusy(false);}
   };
   return <section className="admin-panel admin-inventory" aria-label="재고 관리" hidden={hidden}>
     <h2>영양제 재고 관리</h2>
-    <p>활성 상품 {products.length}개 · 입고는 추가 수량, 재고 수정은 실제 남은 총수량입니다.</p>
-    <button type="button" disabled={busy} onClick={async()=>{setError('');try{await refresh();}catch(e){setError(e.message);}}}>재고 새로고침</button>
+    <p>상품 {products.length}개 · 추가로 입고한 수량을 입력해주세요.</p>
+    <button className="secondary-btn" type="button" disabled={busy} onClick={async()=>{setError('');try{await refresh();}catch(e){setError(e.message);}}}>새로고침</button>
     {message && <p role="status">{message}</p>}
     {error && <p className="form-error" role="alert">{error}</p>}
     {pending && <div className="admin-actions">
@@ -43,8 +43,11 @@ export default function AdminInventory({hidden=false}) {
     {products.map(product=><article className="machine-admin-card" key={product.id}>
       <div><strong>{product.name}</strong><span>{product.category} · 슬롯 {product.dispenser_slot??'미지정'}</span><strong>현재 재고 {product.stock}개</strong></div>
       <div className="admin-form">
-        <label>수량<input type="number" min="0" max="999999" step="1" inputMode="numeric" aria-label={`${product.name} 수량`} value={values[product.id]??''} disabled={busy||Boolean(pending)} onChange={e=>setValues(prev=>({...prev,[product.id]:e.target.value}))}/></label>
-        <div className="admin-actions"><button type="button" disabled={busy||Boolean(pending)} onClick={()=>save(product,'add')}>입고 추가</button><button type="button" disabled={busy||Boolean(pending)} onClick={()=>save(product,'set')}>이 수량으로 수정</button></div>
+        <label>입고 수량<input type="text" maxLength={6} inputMode="numeric" pattern="[0-9]*" placeholder="추가할 수량" aria-label={`${product.name} 수량`} value={values[product.id]??''} disabled={busy||Boolean(pending)} onChange={e=>{if(/^\d*$/.test(e.target.value))setValues(prev=>({...prev,[product.id]:e.target.value}));}}/></label>
+        <div className="stock-shortcuts" aria-label={`${product.name} 입고 수량 빠른 입력`}>
+          {[1,5,10].map(amount=><button type="button" key={amount} disabled={busy||Boolean(pending)} onClick={()=>setValues(prev=>({...prev,[product.id]:String(Math.min(999999,Number(prev[product.id]||0)+amount))}))}>+{amount}</button>)}
+        </div>
+        <div className="admin-actions"><button type="button" disabled={busy||Boolean(pending)} onClick={()=>save(product,'add')}>입고 추가</button><button className="stock-reset" type="button" disabled={busy||Boolean(pending)||product.stock===0} onClick={()=>{if(window.confirm(`${product.name} 재고 ${product.stock}개를 0개로 초기화할까요?`))save(product,'set');}}>초기화</button></div>
       </div>
     </article>)}
   </section>;

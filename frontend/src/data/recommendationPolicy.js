@@ -1,11 +1,11 @@
 // Diet-related candidates, not diagnoses or treatment recommendations.
 export const NUTRITION_CATEGORY = {
-  code: 'nutrition', title: '식사 보완 검토', emoji: '🥗', symptoms: [
-    { code: 'diet-c', label: '과일·채소 섭취가 적어 비타민 C 정보를 보고 싶음' },
-    { code: 'diet-d', label: '비타민 D 식품 섭취가 적어 보완 정보를 보고 싶음' },
-    { code: 'diet-mg', label: '통곡물·콩·견과류 섭취가 적어 마그네슘 정보를 보고 싶음' },
-    { code: 'diet-omega', label: '생선 섭취가 적어 EPA·DHA 정보를 보고 싶음' },
-    { code: 'diet-zinc', label: '육류·해산물·콩 섭취가 적어 아연 정보를 보고 싶음' },
+  code: 'nutrition', title: '불규칙한 식사 / 편식', emoji: '🥗', symptoms: [
+    { code: 'diet-c', label: '과일·채소를 거의 먹지 않음' },
+    { code: 'diet-d', label: '생선·달걀을 잘 먹지 않음' },
+    { code: 'diet-mg', label: '잡곡·콩·견과류보다 흰쌀밥이나 면 위주로 먹음' },
+    { code: 'diet-omega', label: '생선보다 육류 위주로 먹음' },
+    { code: 'diet-zinc', label: '고기·해산물·콩을 자주 거름' },
   ],
 };
 const REVIEW_NOTES = {

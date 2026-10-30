@@ -3,6 +3,7 @@ import MainScreen from './pages/MainScreen';
 import PurchaseScreen from './pages/PurchaseScreen';
 import RecommendScreen from './pages/RecommendScreen';
 import './App.css';
+import './styles/KioskTheme.css';
 import { clearKioskSession, watchKioskIdle } from './services/kioskSession';
 
 function App() {
