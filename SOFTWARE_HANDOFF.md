@@ -1,4 +1,13 @@
-> 최신 UI 및 남은 확인: [UI_HANDOFF_2026-10-30.md](UI_HANDOFF_2026-10-30.md). 이번 UI는 최신 Git 소스로 빌드하며 기존 ZIP에는 포함되지 않습니다.
+## 2026-11-10 진행 상황
+
+- Mega에 슬롯 11 → D26, 슬롯 20 → D28 배치를 적용했다. 현장에서 20개 모터 구동, 재고 반영, 구동 시간 조정을 확인했다. [현재 배선표](ARDUINO_WIRING.md)
+- DHT22는 D2에서 21.3°C, 42.0% 정상 읽기를 확인했다. 쿨러 제어는 D23이다. 두 쿨러의 실제 회전은 확인이 남아 있다.
+- 관리자 로그인 후 자판기 위치 목록에서 기기를 선택한다. 재고와 쿨러 기준값은 졸업작품 자판기에서 관리한다. 다른 위치는 시연용이며 재고를 공유하거나 수정하지 않는다.
+- 현재 Mega는 온도나 습도 중 한 기준에 도달하면 쿨러를 켠다. 두 기준을 모두 넘을 때 켜도록 바꾸는 작업은 남아 있다.
+- 모바일은 아이디·비밀번호 가입을 사용한다. Supabase의 이메일 공급자는 활성화하고 가입 이메일 확인은 끈다. 실제 신규 가입과 재로그인 확인이 남아 있다.
+- 모바일 앱은 최신 소스로 빌드한다. 노트북에서 운영할 때는 `python deployment/serve_mobile_lan.py --pi <Pi IPv4> --directory health-app-web/dist`를 사용한다. 카카오 지도는 사용 중인 모바일 웹 주소를 카카오 앱에 등록한다.
+
+[2026-10-30 UI 기록](UI_HANDOFF_2026-10-30.md)
 
 > 2026-10-29 현장 갱신: 최신 Mega 7,244바이트 업로드/검증, DHT22 ENV 정상 응답, 현재 두 모터 구매 흐름 및 구매 로그를 사용자 확인. 전체 핀별 시험은 미완료. 최신 배선과 확인 범위는 [ARDUINO_WIRING.md](ARDUINO_WIRING.md)를 우선한다. 아래 업로드 미완료 설명은 이전 기록이다.
 
@@ -32,7 +41,7 @@
 |8|D10|8|Doctor's Best High Absorption Magnesium|
 |9|D11|9|Sports Research Triple Strength Omega-3|
 |10|D12|10|NOW Foods Omega-3|
-|11|D24|11|Doctor's Best High Absorption CoQ10|
+|11|D26|11|Doctor's Best High Absorption CoQ10|
 |12|D14|12|Qunol Ubiquinol|
 |13|D15|13|California Gold Nutrition Lutein Plus|
 |14|D16|14|Doctor's Best Lutein with Zeaxanthin|
@@ -41,9 +50,9 @@
 |17|D19|17|Solgar Zinc Picolinate 15mg|
 |18|D20|19|Solgar Zinc Picolinate 22mg|
 |19|D21|23|NOW Foods Beta-Glucan|
-|20|D22|24|NOW Foods Beta Glucan 250mg|
+|20|D28|24|NOW Foods Beta Glucan 250mg|
 
-센서는 **DHT22, D2**, 팬 드라이버 제어는 **D23**. D13은 부팅 LED에 사용되므로 모터11은 D24에 배정했다([공식 부트로더 소스](https://github.com/arduino/ArduinoCore-avr/blob/1.8.6/bootloaders/stk500v2/stk500boot.c)). 기존 슬롯1/2를 보존했다. DB의 20슬롯 및 기기 허용 슬롯 적용을 완료했고 재고 수량은 바꾸지 않았다. 실제 새 배선·업로드는 아직 하지 않았다.
+센서는 **DHT22, D2**, 팬 드라이버 제어는 **D23**. D13은 부팅 LED에 사용되므로 모터 11은 D26에 배정했다([공식 부트로더 소스](https://github.com/arduino/ArduinoCore-avr/blob/1.8.6/bootloaders/stk500v2/stk500boot.c)). 슬롯 20은 D28이다. 2026-11-10에 두 핀을 Mega에 적용하고 현장에서 구동을 확인했다.
 
 ## Mega 업로드
 

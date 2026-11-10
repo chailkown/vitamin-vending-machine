@@ -3,7 +3,6 @@ import '../styles/PurchaseScreen.css';
 import { getAllVitamins, getLastFetchError } from '../services/vitaminService';
 import { placeOrder } from '../services/orderService';
 import DispenseModal from '../components/DispenseModal';
-import { getQrProfileRules, assessRecommendedProducts } from '../services/recommendationSafety';
 
 export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComplete, onOrderingChange }) {
   const [categories, setCategories] = useState([]);
@@ -22,19 +21,13 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
   const [dispenseResult, setDispenseResult] = useState(null);
   const ordering = useRef(false);
   const refreshInventory = useRef(() => {});
-  const safetyExclusions = useMemo(() => {
-    // Direct selection is ordinary vending; health rules apply only to recommendation sessions.
-    if (!recommendedCombo) return {};
-    const profile = recommendedCombo?.qrProfile;
-    const result = assessRecommendedProducts(vitamins, profile, profile ? getQrProfileRules(profile) : null);
-    const excluded = Object.fromEntries(result.excluded.map((p) => [p.id, p.reason]));
-    for (const product of recommendedCombo?.productExclusions || []) excluded[product.id] = product.reason;
-    if (recommendedCombo?.hold) for (const product of vitamins) excluded[product.id] ||= '현재 상황·건강조건에서는 자동 추천·배출을 보류합니다.';
-    return excluded;
+  const relatedProducts = useMemo(() => {
+    const ids = recommendedCombo?.relatedItems || recommendedCombo?.items || [];
+    return vitamins.filter(product => ids.includes(product.id));
   }, [vitamins, recommendedCombo]);
-  const products = useMemo(() => activeCategory === '추천'
-    ? vitamins.filter((product) => (recommendedCombo?.relatedItems || recommendedCombo?.items)?.includes(product.id))
-    : vitamins.filter((product) => product.category === activeCategory), [vitamins, activeCategory, recommendedCombo]);
+  const products = activeCategory === '추천'
+    ? (relatedProducts.length ? relatedProducts : vitamins)
+    : vitamins.filter(product => product.category === activeCategory);
 
   // 초기 로드: 카테고리 및 제품 조회
   useEffect(() => {
@@ -73,7 +66,7 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
 
   // Cart helpers
   const addToCart = (product) => {
-    if (ordering.current || showPayment || safetyExclusions[product.id] || !product.dispenser_slot) return;
+    if (ordering.current || showPayment || !product.dispenser_slot) return;
     setCart((prev) => {
       if(prev.reduce((sum,item)=>sum+item.qty,0)>=5)return prev;
       const existing = prev.find((p) => p.product.id === product.id);
@@ -170,10 +163,22 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
         <>
           {activeCategory === '추천' && recommendedCombo && (
             <div className="recommend-info-panel">
-              <h3>관련 영양제 · 추천 가능 {(recommendedCombo.items || []).length}개 상품</h3>
-              <p className="recommend-brief">{recommendedCombo.guidance || '식사 보완 후보입니다. 이용 전 주의사항을 확인해주세요.'}</p>
-              {!recommendedCombo.items?.length && <p role="status">현재 정보로 자동 추천할 상품이 없습니다. 관련 후보는 참고용이며 추천·배출이 제한됩니다.</p>}
-
+              <h3>{recommendedCombo.qrProfile?.name
+                ? `${recommendedCombo.qrProfile.name}님 추천내역입니다`
+                : '추천내역입니다'}</h3>
+              <p className="recommend-brief">{relatedProducts.length
+                ? '선택한 상황과 관련된 영양제입니다.'
+                : '전체 영양제를 둘러보고 원하는 상품을 선택하세요.'}</p>
+              {recommendedCombo.guidance && (
+                <details>
+                  <summary>섭취 안내</summary>
+                  <p>{recommendedCombo.guidance}</p>
+                  {(recommendedCombo.warnings || []).map(warning => <p key={warning}>{warning}</p>)}
+                  {(recommendedCombo.productExclusions || []).map(product => (
+                    <p key={product.id}>{product.name}: {product.reason}</p>
+                  ))}
+                </details>
+              )}
             </div>
           )}
 
@@ -193,9 +198,9 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
                 <button
                   className="card-button"
                   onClick={() => addToCart(product)}
-                  disabled={product.stock === 0 || Boolean(safetyExclusions[product.id]) || !product.dispenser_slot}
+                  disabled={product.stock === 0 || !product.dispenser_slot}
                 >
-                  {product.stock === 0 ? '품절' : safetyExclusions[product.id] ? '선택 불가' : !product.dispenser_slot ? '준비 중' : '장바구니 담기'}
+                  {product.stock === 0 ? '품절' : !product.dispenser_slot ? '준비 중' : '장바구니 담기'}
                 </button>
               </div>
             ))}

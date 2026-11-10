@@ -13,14 +13,14 @@ beforeEach(()=>{
   getAllVitamins.mockResolvedValue([{id:3,name:'C 상품',category:'비타민 C',price:150,stock:5,dispenser_slot:1}]);
 });
 
-test('related products remain visible but a recommendation hold blocks cart across category changes',async()=>{
+test('related products remain visible but a recommendation hold allows cart across category changes',async()=>{
   await act(async()=>root.render(<PurchaseScreen onBack={()=>{}} onOrderingChange={()=>{}} onOrderComplete={()=>{}} recommendedCombo={{items:[],relatedItems:[3],hold:true,guidance:'현재 조건에서는 추천 불가',productExclusions:[{id:3,name:'C 상품',reason:'건강조건 확인 필요'}]}}/>));
   expect(container.querySelector('.card-name').textContent).toBe('C 상품');
-  expect(container.querySelector('.card-button').disabled).toBe(true);
+  expect(container.querySelector('.card-button').disabled).toBe(false);
   await act(async()=>container.querySelector('.card-button').click());
-  expect(container.querySelector('.cart-item')).toBeNull();
+  expect(container.querySelector('.cart-item')).not.toBeNull();
   await act(async()=>[...container.querySelectorAll('.tab')].find(el=>el.textContent==='비타민 C').click());
-  expect(container.querySelector('.card-button').disabled).toBe(true);
+  expect(container.querySelector('.card-button').disabled).toBe(false);
 });
 afterEach(async()=>{await act(async()=>root.unmount());container.remove();});
 
@@ -51,24 +51,25 @@ test('focus refresh removes an out-of-stock cart item without changing selected 
   expect(container.querySelector('.tab.active').textContent).toBe('비타민 C');
 });
 
-test('empty recommendation retains explanation and recommendation tab instead of selecting an unrelated product',async()=>{
+test('empty recommendation shows the catalog with explanatory text',async()=>{
   await act(async()=>root.render(<PurchaseScreen onBack={()=>{}} onOrderingChange={()=>{}} onOrderComplete={()=>{}} recommendedCombo={{items:[],title:'추천',guidance:'원인 평가가 필요합니다.',warnings:['상담 안내'],sources:[],nutrients:[]}}/>));
   expect(container.querySelector('.tab.active').textContent).toBe('추천');
-  expect(container.textContent).toContain('자동 추천할 상품이 없습니다');
+  expect(container.textContent).toContain('전체 영양제를 둘러보고');
   expect(container.textContent).toContain('원인 평가가 필요합니다');
-  expect(container.textContent).not.toContain('장바구니 담기');
+  expect(container.textContent).toContain('장바구니 담기');
 });
 
-test('known QR restriction remains enforced after switching from recommendation to another category',async()=>{
+test('QR shows the member name and allows purchase across categories',async()=>{
   const qrProfile={id:'test',name:'테스트',age:25,conditionCodes:[9],allergyCodes:[0],medicationCodes:[0]};
   await act(async()=>root.render(<PurchaseScreen onBack={()=>{}} onOrderingChange={()=>{}} onOrderComplete={()=>{}} recommendedCombo={{items:[],qrProfile,nutrients:[]}}/>));
+  expect(container.querySelector('.recommend-info-panel h3').textContent).toBe('테스트님 추천내역입니다');
   const category=[...container.querySelectorAll('.tab')].find(el=>el.textContent==='비타민 C');
   await act(async()=>category.click());
   const add=container.querySelector('.card-button');
-  expect(add.disabled).toBe(true);
-  expect(add.textContent).toBe('선택 불가');
+  expect(add.disabled).toBe(false);
+  expect(add.textContent).toBe('장바구니 담기');
   await act(async()=>add.click());
-  expect(container.querySelector('.cart-item')).toBeNull();
+  expect(container.querySelector('.cart-item')).not.toBeNull();
 });
 
 test('cart pages retain five items and clamp after removal', async()=>{

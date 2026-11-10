@@ -91,3 +91,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible { 
 .choice-option-wrap > p { grid-column:1/-1; }
 .home-top .home-name { border:0; box-shadow:none; background:transparent; padding:0; border-radius:0; font-size:28px; line-height:1.4; }
 .phone-frame .qr-screen-panel h2 { font-size:28px; line-height:1.4; margin:12px 0 20px; }
+.cooler-header { padding: 20px; margin-bottom: 16px; border-radius: 16px; background: #e8f5f3; color: #174d47; }
+.cooler-header span { font-size: 13px; font-weight: 700; }
+.cooler-header h2 { margin: 6px 0; }
+.cooler-header p, .cooler-note { margin: 0; font-size: 14px; line-height: 1.5; }
+.cooler-form { display: grid; gap: 14px; }
+.cooler-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.cooler-fields label { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; font-weight: 700; }
+.cooler-fields label span { display: flex; align-items: center; gap: 6px; }
+.cooler-fields input { width: 100%; min-width: 0; min-height: 42px; padding: 6px; font: inherit; font-size: 20px; }
+.cooler-note { color: var(--muted); }
+.cooler-save { min-height: 46px; border: 0; border-radius: 12px; background: #17655b; color: white; font: inherit; font-weight: 700; }
+.cooler-save:disabled { opacity: .55; }

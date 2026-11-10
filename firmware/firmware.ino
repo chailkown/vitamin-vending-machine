@@ -8,6 +8,7 @@ uint8_t used = 0, running = 0;
 bool overflow = false, fanOn = true, sensorValid = false;
 unsigned long motorStarted = 0, motorDuration = 0, sampled = 0;
 float temperature = 0, humidity = 0;
+float fanTempOn = FAN_TEMP_ON, fanHumidityOn = FAN_HUMIDITY_ON;
 
 void fan(bool enabled) {
   fanOn = enabled;
@@ -31,6 +32,18 @@ void command() {
   if (!strcmp(input, "PING")) Serial.println(F("PONG MOTOR20_V1"));
   else if (!strcmp(input, "STOP")) { stopMotor(); Serial.println(F("STOPPED")); }
   else if (!strcmp(input, "STATUS")) Serial.println(running ? F("STATUS BUSY") : F("STATUS IDLE"));
+  else if (!strncmp(input, "FANCFG ", 7)) {
+    const char *p = input + 7;
+    unsigned long temp, hum;
+    if (running || !number(p, temp, 80) || *p++ != ' ' ||
+        !number(p, hum, 100) || *p || temp < 2 || hum < 5) {
+      Serial.println(F("ERR FANCFG"));
+      return;
+    }
+    fanTempOn = temp;
+    fanHumidityOn = hum;
+    Serial.print(F("FANCFG OK ")); Serial.print(temp); Serial.print(' '); Serial.println(hum);
+  }
   else if (!strcmp(input, "ENV")) {
     Serial.print(F("ENV ")); Serial.print(sensorValid ? F("OK ") : F("ERROR "));
     Serial.print(temperature); Serial.print(' '); Serial.print(humidity);
@@ -78,7 +91,8 @@ void loop() {
     sampled = millis(); temperature = sensor.readTemperature(); humidity = sensor.readHumidity();
     sensorValid = !isnan(temperature) && !isnan(humidity);
     if (!sensorValid) fan(true);
-    else if (temperature >= FAN_TEMP_ON || humidity >= FAN_HUMIDITY_ON) fan(true);
-    else if (temperature <= FAN_TEMP_OFF && humidity <= FAN_HUMIDITY_OFF) fan(false);
+    else if (temperature >= fanTempOn || humidity >= fanHumidityOn) fan(true);
+    else if (temperature <= fanTempOn - (FAN_TEMP_ON - FAN_TEMP_OFF) &&
+             humidity <= fanHumidityOn - (FAN_HUMIDITY_ON - FAN_HUMIDITY_OFF)) fan(false);
   }
 }

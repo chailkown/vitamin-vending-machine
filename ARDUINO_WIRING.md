@@ -1,14 +1,12 @@
 # Arduino Mega 2560 R3 배선·핀 배치
 
-기준: 2026-10-29. 실제 업로드한 `firmware/firmware.ino`, `mega_pin_map.h`, `settings.h` 기준이다. 슬롯 번호·보드 핀 번호·DB 상품 ID는 서로 다르다. 보드에 적힌 숫자 3이 D3이다.
+기준: 2026-11-10. 실제 업로드한 `firmware/firmware.ino`, `mega_pin_map.h`, `settings.h` 기준이다. 슬롯 번호·보드 핀 번호·DB 상품 ID는 서로 다르다. 보드에 적힌 숫자 3이 D3이다.
 
-## 현재 확인한 상태
+## 현재 배선 변경
 
-- 사용자 로그에서 최신 7,244바이트 펌웨어 업로드 및 플래시 검증 완료.
-- `PING → PONG MOTOR20_V1`, `ENV → ENV OK 20.90 42.80 FAN 0` 확인. 온도 20.9℃, 습도 42.8%, 당시 팬 제어 OFF.
-- 사용자는 현재 연결한 D3/D4 두 모터를 사용하는 구매 흐름의 모터 작동 및 구매 로그 저장을 확인했다. 각 핀별 반복 배출·수량 정확성까지 모두 검증됐다는 뜻은 아니다.
-- 나머지 18모터 배선/작동, 팬의 실제 회전, 재부팅 자동 실행은 현장 확인이 남아 있다.
-- 모터 시간은 기본 500ms이며 사용자가 나중에 상품별로 교정한다.
+- 코엔자임Q10은 슬롯 11의 신호선을 D24에서 D26으로 옮긴다.
+- 베타글루칸 250mg은 슬롯 20의 신호선을 D22에서 D28로 옮긴다.
+- 슬롯 번호와 상품 ID는 그대로다. 두 채널의 실제 회전은 배선을 옮긴 뒤 구매 화면에서 확인한다.
 
 ## 전체 모터 배치
 
@@ -26,7 +24,7 @@
 |8|D10|8|Doctor's Best High Absorption Magnesium|
 |9|D11|9|Sports Research Triple Strength Omega-3|
 |10|D12|10|NOW Foods Omega-3|
-|11|D24|11|Doctor's Best High Absorption CoQ10|
+|11|D26|11|Doctor's Best High Absorption CoQ10|
 |12|D14|12|Qunol Ubiquinol|
 |13|D15|13|California Gold Nutrition Lutein Plus|
 |14|D16|14|Doctor's Best Lutein with Zeaxanthin|
@@ -35,7 +33,7 @@
 |17|D19|17|Solgar Zinc Picolinate 15mg|
 |18|D20|19|Solgar Zinc Picolinate 22mg|
 |19|D21|23|NOW Foods Beta-Glucan|
-|20|D22|24|NOW Foods Beta Glucan 250mg|
+|20|D28|24|NOW Foods Beta Glucan 250mg|
 
 **현재 두 모터:** 비타민 C(Doctor's Best Quali-C)는 **D3**, 비타민 D3(Swanson)는 **D4**. 비타민 D3라는 상품명의 D3와 보드 D3 핀은 별개다.
 
@@ -71,7 +69,8 @@
 
 ## 비워둘 핀
 
-- **D13은 모터에 쓰지 않는다. 슬롯 11은 D24다.**
+- **D13은 모터에 쓰지 않는다. 슬롯 11은 D26이다.**
+- **D22와 D24는 비워둔다. 슬롯 20은 D28이다.**
 - D0/D1은 시리얼 통신에 사용하므로 외부 모터 신호를 연결하지 않는다.
 - D2는 센서, D23은 팬용이다.
 - D20/D21은 현재 모터 18/19용이다. I²C 장치를 추가할 경우 핀 충돌을 먼저 해결해야 한다.

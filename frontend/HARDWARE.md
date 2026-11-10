@@ -1,6 +1,6 @@
 # Pi → Mega 무료 배출
 
-2026-10-29: **DHT22 D2 / 모터1~20 D3~D22 중 D13 대신 D24 / 환기팬 D23**. 모터11은 부팅 LED 핀을 피해 D24에 연결한다. 전체 스케치와 컴파일 검증을 완료했다. [firmware/README.md](../firmware/README.md), [전체 상품·설치 안내](../SOFTWARE_HANDOFF.md)를 참고한다. DB 20슬롯도 적용했으며 실제 배선·업로드는 현장에서 확인한다.
+2026-11-10: **DHT22 D2 / 모터 11 D26 / 모터 20 D28 / 환기팬 D23**. 전체 모터 배치는 [배선표](../ARDUINO_WIRING.md)를 참고한다. 전체 스케치와 컴파일 검증을 완료했다. [firmware/README.md](../firmware/README.md), [전체 상품·설치 안내](../SOFTWARE_HANDOFF.md)를 참고한다. DB 20슬롯도 적용했으며 실제 배선·업로드는 현장에서 확인한다.
 
 2026-10-29 기준. 구현은 `../pi_gateway/server.py`, 배포는 [deployment/README.md](../deployment/README.md)를 참고합니다.
 
@@ -10,7 +10,7 @@ Pi 4B + Mega 2560 R3, USB CH340, 115200 baud. 새 펌웨어는 D2의 DHT22를 �
 
 - ID3 비타민 C → 슬롯1 → D3.
 - ID5 비타민 D3 → 슬롯2 → D4.
-- 활성 20상품을 슬롯1~20 → D3~D22에 배정하되 슬롯11은 D24로 옮겼습니다. 실제 배선을 맞춰주세요.
+- 활성 20상품의 슬롯별 핀은 [배선표](../ARDUINO_WIRING.md)를 따릅니다.
 - 현재 500ms는 기존 시험값. 사용자가 나중에 교정하기로 했습니다.
 
 ## 실행 계약

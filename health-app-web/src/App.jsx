@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import './App.css';
 import './MobileTheme.css';
 import AdminInventory from './components/AdminInventory';
+import AdminEnvironment from './components/AdminEnvironment';
 import {loginAdmin,logoutAdmin,adminAction} from './services/adminService';
 import { createQrDataUrl } from './services/qrImage';
 import { toKioskProfile, validateQrProfile, serializeQrProfile } from './services/qrProfile';
 import healthCatalog from './services/healthCatalog.json';
-import { authClient, requireAuthClient, memberSession, authErrorMessage, authenticateMember, verifySignupLink } from './services/authClient';
+import { authClient, requireAuthClient, memberSession, authErrorMessage, authenticateMember } from './services/authClient';
 import {
   getHealthProfile,
   getPurchaseHistory,
@@ -18,6 +19,7 @@ import {
 } from './services/healthDb';
 
 const VENDING_MACHINES_KEY = 'health-app-vending-machines-v1';
+const CONNECTED_MACHINE_ID = 'vm-1793846328177';
 const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY?.trim() || '';
 const KAKAO_MAP_SDK_URL = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(KAKAO_MAP_KEY)}&autoload=false&libraries=services`;
 const KAKAO_MAP_SCRIPT_ID = 'kakao-map-sdk';
@@ -131,7 +133,7 @@ const loadKakaoMapSdk = () => new Promise((resolve, reject) => {
   const handleError = () => {
     const failedScript = document.getElementById(KAKAO_MAP_SCRIPT_ID);
     failedScript?.remove();
-    reject(new Error('지도를 불러오지 못했습니다.'));
+    reject(new Error('지도를 불러오지 못했어요.'));
   };
 
   const existingScript = document.getElementById(KAKAO_MAP_SCRIPT_ID);
@@ -186,7 +188,6 @@ function App() {
   const [authMode, setAuthMode] = useState('login');
   const [authForm, setAuthForm] = useState({ name: '', userId: '', password: '' });
   const [authError, setAuthError] = useState('');
-  const [confirmationLink,setConfirmationLink]=useState('');
   const [screen, setScreen] = useState('auth');
   const [profile, setProfile] = useState(() => ({...DEFAULT_PROFILE}));
   const [savedNotice, setSavedNotice] = useState('');
@@ -197,7 +198,7 @@ function App() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
   const [historyRefresh, setHistoryRefresh] = useState(0);
-  const [mapStatus, setMapStatus] = useState('');
+  const [mapUnavailable, setMapUnavailable] = useState(!KAKAO_MAP_KEY);
   const [vendingMachines, setVendingMachines] = useState(() => loadJson(VENDING_MACHINES_KEY, DEFAULT_VENDING_MACHINES));
   const [machineForm, setMachineForm] = useState(EMPTY_MACHINE_FORM);
   const [pickerSeed,setPickerSeed]=useState(EMPTY_MACHINE_FORM);
@@ -205,7 +206,9 @@ function App() {
   const machineLock=useRef(false);
   const [machineNotice, setMachineNotice] = useState('');
   const [machineError, setMachineError] = useState('');
-  const [adminView,setAdminView]=useState('inventory');
+  const [adminView,setAdminView]=useState('locations');
+  const [selectedMachineId,setSelectedMachineId]=useState(null);
+  const selectedMachine = vendingMachines.find(machine => machine.id === selectedMachineId);
   const [allergyMode, setAllergyMode] = useState(() =>
     ALLERGY_OPTIONS.includes(profile.allergies) ? profile.allergies : '직접 입력'
   );
@@ -283,25 +286,35 @@ function App() {
         if (cancelled) return;
         kakao.maps.load(() => {
           if (cancelled) return;
-          const center = new kakao.maps.LatLng(MAP_START_POINT.lat, MAP_START_POINT.lng);
-          const map = new kakao.maps.Map(mapElement, {
-            center,
-            level: 4,
-          });
+          const locations = vendingMachines.filter(({ lat, lng }) =>
+            Number.isFinite(lat) && Number.isFinite(lng)
+            && Math.abs(lat) <= 90 && Math.abs(lng) <= 180);
+          const first = locations[0] || MAP_START_POINT;
+          const center = new kakao.maps.LatLng(first.lat, first.lng);
+          const map = new kakao.maps.Map(mapElement, { center, level: 4 });
+          const bounds = new kakao.maps.LatLngBounds();
+          const infoWindow = new kakao.maps.InfoWindow({ removable: true });
 
-          vendingMachines.forEach((machine) => {
+          locations.forEach((machine) => {
             const position = new kakao.maps.LatLng(machine.lat, machine.lng);
-            new kakao.maps.Marker({
-              map,
-              position,
-              title: machine.name,
+            bounds.extend(position);
+            const marker = new kakao.maps.Marker({ map, position, title: machine.name });
+            kakao.maps.event.addListener(marker, 'click', () => {
+              const label = document.createElement('div');
+              label.style.padding = '8px';
+              label.textContent = machine.name;
+              infoWindow.setContent(label);
+              infoWindow.open(map, marker);
             });
           });
+          if (locations.some(({ lat, lng }) => lat !== first.lat || lng !== first.lng)) {
+            map.setBounds(bounds);
+          }
 
-          setMapStatus('');
+          setMapUnavailable(false);
         });
-      } catch (error) {
-        if (!cancelled) setMapStatus(error.message);
+      } catch {
+        if (!cancelled) setMapUnavailable(true);
       }
     };
 
@@ -313,7 +326,7 @@ function App() {
   }, [activeScreen, vendingMachines]);
 
   useEffect(() => {
-    if (activeScreen !== 'admin' || adminView !== 'locations') return undefined;
+    if (activeScreen !== 'admin' || adminView !== 'locationEditor') return undefined;
 
     const pickerElement = document.getElementById('admin-location-map');
     if (!pickerElement) return undefined;
@@ -447,37 +460,32 @@ function App() {
     setAuthBusy(true);
     setAuthError('');
     try {
-      const email = authForm.userId.trim().toLowerCase();
+      const username = authForm.userId.trim().toLowerCase();
       const password = authForm.password;
       const name = authForm.name.trim();
-      if (!email || !password || (authMode === 'signup' && !name)) throw new Error('필수 항목을 입력해주세요.');
+      if (!username || !password || (authMode === 'signup' && !name)) throw new Error('필수 항목을 입력해주세요.');
       if (name.length > 100) throw new Error('이름은 100자 이내로 입력해주세요.');
       if (authMode === 'admin') {
-        await loginAdmin(email,password);
+        await loginAdmin(username,password);
         sessionEpoch.current += 1;
         setSession({userId:'admin',name:'관리자',isAdmin:true});
+        setSelectedMachineId(null);
+        setAdminView('locations');
         setNeedsHealthSetup(false);setScreen('admin');
         setAuthForm(prev=>({...prev,password:''}));
         return;
       }
       if (authMode === 'signup' && password.length < 8) throw new Error('비밀번호는 8자 이상으로 입력해주세요.');
-      const data = await authenticateMember({mode:authMode,email,password,name});
+      const data = await authenticateMember({mode:authMode,username,password,name});
       setAuthForm((prev) => ({...prev,password:''}));
       if (!data.session) {
         setAuthMode('login');
-        setAuthError('가입 요청을 접수했습니다. 이메일의 인증 링크를 누른 뒤 이 화면에서 로그인해주세요. 이미 가입했다면 기존 비밀번호로 로그인해주세요.');
+        setAuthError('계정을 바로 활성화하지 못했습니다. 관리자에게 문의해주세요.');
         return;
       }
       await startSession(memberSession(data.user));
     } catch (error) { setAuthError(authErrorMessage(error)); }
     finally { authPending.current = false; setAuthBusy(false); }
-  };
-
-  const confirmEmail = async () => {
-    if(authPending.current)return;authPending.current=true;setAuthBusy(true);setAuthError('');
-    try {const data=await verifySignupLink(confirmationLink);setConfirmationLink('');await startSession(memberSession(data.user));}
-    catch(error){setAuthError(authErrorMessage(error));}
-    finally{authPending.current=false;setAuthBusy(false);}
   };
 
   const logout = async () => {
@@ -674,11 +682,11 @@ function App() {
                 </label>
               )}
               <label className="auth-field">
-                {authMode==='admin'?'관리자 ID':'이메일'}
+                {authMode==='admin'?'관리자 ID':'아이디'}
                 <input
                   value={authForm.userId}
                   onChange={(event) => setAuthForm((prev) => ({ ...prev, userId: event.target.value }))}
-                  type={authMode==='admin'?'text':'email'} autoComplete={authMode==='admin'?'username':'email'} required placeholder={authMode==='admin'?'관리자 ID':'example@email.com'}
+                  type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} required placeholder={authMode==='admin'?'관리자 ID':'아이디 입력'}
                 />
               </label>
               <label className="auth-field">
@@ -696,10 +704,7 @@ function App() {
                 {authBusy ? '연결 중...' : authMode === 'signup' ? '회원가입' : '로그인'}
               </button>
             </form>
-            <details className="email-confirm-help"><summary>이메일 인증 후 화면이 열리지 않나요?</summary><p>아직 열지 않은 인증 메일의 버튼 링크를 복사해 여기에 붙여넣으면 이 화면에서 인증할 수 있습니다. 이미 인증했다면 이메일로 로그인해주세요.</p>
-              <label>인증 링크<input type="url" value={confirmationLink} onChange={(event)=>setConfirmationLink(event.target.value)} autoComplete="off" /></label>
-              <button type="button" onClick={confirmEmail} disabled={authBusy||!confirmationLink}>이메일 인증 완료</button>
-            </details>
+
           </section>
         )}
 
@@ -743,29 +748,63 @@ function App() {
           <>
             <Header title="자판기 위치" eyebrow="지도" onBack={() => setScreen('home')} />
             <section className="map-panel">
-              <div id="kakao-map" className={`kakao-map ${!KAKAO_MAP_KEY ? 'map-fallback' : ''}`}>
-                {!KAKAO_MAP_KEY && (
-                  <div className="map-key-message">
-                    <strong>지도 준비 중</strong>
-                    <span>곧 자판기 위치를 안내해드릴게요.</span>
-                  </div>
-                )}
-              </div>
-              {KAKAO_MAP_KEY && mapStatus && <p className="db-notice">{mapStatus}</p>}
+              <div id="kakao-map" className="kakao-map" hidden={mapUnavailable} />
+              {mapUnavailable && (
+                <ul className="machine-admin-list">
+                  {vendingMachines.map(machine => (
+                    <li key={machine.id} className="machine-admin-card">
+                      <div><strong>{machine.name}</strong><span>{machine.address}</span></div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
           </>
         )}
 
         {activeScreen === 'admin' && (
           <>
-            <Header title="자판기 관리" eyebrow="관리자" onBack={logout} />
-            <nav className="admin-view-tabs" aria-label="관리 항목">
-              <button type="button" aria-pressed={adminView==='inventory'} onClick={()=>setAdminView('inventory')}>재고 관리</button>
-              <button type="button" aria-pressed={adminView==='locations'} onClick={()=>setAdminView('locations')}>자판기 위치</button>
-              <button type="button" onClick={logout}>로그아웃</button>
-            </nav>
-            <AdminInventory hidden={adminView!=='inventory'} />
-            <section className="admin-panel" hidden={adminView!=='locations'}>
+            <Header title={selectedMachine?.name || '자판기 위치'} eyebrow="관리자"
+              onBack={adminView==='locations' ? logout : ()=>{setSelectedMachineId(null);setAdminView('locations');}} />
+            {adminView==='locations' ? (
+              <section className="admin-panel">
+                <div className="admin-summary">
+                  <strong>관리할 자판기를 선택하세요</strong>
+                  <button type="button" onClick={logout}>로그아웃</button>
+                </div>
+                <div className="machine-admin-list">
+                  {vendingMachines.map(machine => (
+                    <article key={machine.id} className="machine-admin-card">
+                      <div>
+                        <strong>{machine.name}</strong>
+                        <span>{machine.address}</span>
+                        <small>{machine.id===CONNECTED_MACHINE_ID ? '관리 연결됨' : '연결된 기기 없음'}</small>
+                      </div>
+                      <div className="machine-card-actions">
+                        <button type="button" onClick={()=>{setSelectedMachineId(machine.id);setAdminView('inventory');}}>재고 관리</button>
+                        <button type="button" onClick={()=>{setSelectedMachineId(machine.id);setAdminView('environment');}}>쿨러 관리</button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+                <button className="secondary-btn" type="button" onClick={()=>setAdminView('locationEditor')}>자판기 위치 편집</button>
+              </section>
+            ) : adminView!=='locationEditor' && (
+              <>
+                <nav className="admin-view-tabs" aria-label="자판기 선택">
+                  <button type="button" onClick={()=>{setSelectedMachineId(null);setAdminView('locations');}}>자판기 선택으로 돌아가기</button>
+                </nav>
+                {selectedMachine?.id!==CONNECTED_MACHINE_ID && (
+                  <section className="admin-panel">
+                    <h2>연결된 기기가 없습니다</h2>
+                    <p>이 위치의 재고와 쿨러를 관리하려면 실제 기기 연결이 필요합니다.</p>
+                  </section>
+                )}
+              </>
+            )}
+            {selectedMachine?.id===CONNECTED_MACHINE_ID && adminView==='inventory' && <AdminInventory />}
+            {selectedMachine?.id===CONNECTED_MACHINE_ID && adminView==='environment' && <AdminEnvironment machineName={selectedMachine.name} />}
+            <section className="admin-panel" hidden={adminView!=='locationEditor'}>
               <div className="admin-summary">
                 <strong>등록 자판기 {vendingMachines.length}대</strong>
                 <button type="button" onClick={logout}>로그아웃</button>

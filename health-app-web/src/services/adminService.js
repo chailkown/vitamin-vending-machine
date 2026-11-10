@@ -33,3 +33,18 @@ export const inventoryRequestId = () => {
   const hex=[...bytes].map(n=>n.toString(16).padStart(2,'0')).join('');
   return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
 };
+
+export const updateFanThresholds = async (endpoint, thresholds) => {
+  if (!token) throw new Error('관리자로 다시 로그인해주세요.');
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(thresholds),
+    signal: AbortSignal.timeout(12000),
+  });
+  const data = await response.json();
+  if (!response.ok || data.busy) {
+    throw new Error(data.message || '배출 중입니다. 잠시 후 다시 저장해주세요.');
+  }
+  return data.thresholds;
+};

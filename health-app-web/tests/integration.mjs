@@ -353,18 +353,27 @@ test('member profile save carries the JWT and reports DB failure without success
 
 
 test('real authentication API is used and rejected credentials never become a local login', async () => {
-  let called, reject=false;
-  const ctx=vm.createContext({createClient:()=>({auth:{
-    signUp:async(body)=>{called={kind:'signup',body};return {data:{user:{id:'uuid'},session:null},error:null};},
+  let called, reject=false, autoConfirm=true, duplicate=false;
+  const ctx=vm.createContext({AbortSignal,fetch:async()=>({ok:true,json:async()=>({mailer_autoconfirm:autoConfirm})}),createClient:()=>({auth:{
+    signUp:async(body)=>{called={kind:'signup',body};return duplicate?{error:{code:'user_already_exists'}}:{data:{session:{access_token:'jwt'}}};},
     signInWithPassword:async(body)=>{called={kind:'login',body};return reject?{error:new Error('invalid credentials')}:{data:{user:{id:'uuid'},session:{access_token:'jwt'}}};}
   }})});
   vm.runInContext(strip(read('health-app-web/src/services/authClient.js')).replace(/import\.meta\.env/g,'({VITE_SUPABASE_URL:"https://example.supabase.co",VITE_SUPABASE_ANON_KEY:"demo"})'),ctx);
-  const signup=await vm.runInContext('authenticateMember({mode:"signup",email:"sample@example.com",password:"eight-chars",name:"테스트"})',ctx);
-  assert.equal(signup.session,null);assert.equal(called.kind,'signup');assert.equal(called.body.options.data.name,'테스트');
-  const login=await vm.runInContext('authenticateMember({mode:"login",email:"sample@example.com",password:"eight-chars"})',ctx);
+  const signup=await vm.runInContext('authenticateMember({mode:"signup",username:"Sample-1",password:"eight-chars",name:"테스트"})',ctx);
+  assert.equal(signup.session.access_token,'jwt');
+  assert.equal(called.body.email,'sample-1@id.vitamin-vending.example.com');
+  assert.equal(called.body.options.data.name,'테스트');
+  duplicate=true;
+  await assert.rejects(vm.runInContext('authenticateMember({mode:"signup",username:"sample-1",password:"eight-chars"})',ctx),/이미 사용 중인 아이디/);
+  autoConfirm=false;called=null;
+  await assert.rejects(vm.runInContext('authenticateMember({mode:"signup",username:"sample-2",password:"eight-chars"})',ctx),/가입을 완료할 수 없어요/);
+  assert.equal(called,null);
+  const login=await vm.runInContext('authenticateMember({mode:"login",username:"sample@example.com",password:"eight-chars"})',ctx);
   assert.equal(login.session.access_token,'jwt');assert.equal(called.kind,'login');
+  await vm.runInContext('authenticateMember({mode:"login",username:"sample-1",password:"eight-chars"})',ctx);
+  assert.equal(called.body.email,'sample-1@id.vitamin-vending.example.com');
   reject=true;
-  await assert.rejects(vm.runInContext('authenticateMember({mode:"login",email:"sample@example.com",password:"bad"})',ctx),/invalid credentials/);
+  await assert.rejects(vm.runInContext('authenticateMember({mode:"login",username:"sample@example.com",password:"bad"})',ctx),/invalid credentials/);
 });
 
 

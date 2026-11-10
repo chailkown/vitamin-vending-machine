@@ -10,7 +10,7 @@ constexpr uint8_t MOTOR_COUNT = 20;
 // Array index = slot - 1. These are driver control pins, not motor power.
 constexpr uint8_t MOTORS[MOTOR_COUNT] = {
     3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-    24, 14, 15, 16, 17, 18, 19, 20, 21, 22
+    26, 14, 15, 16, 17, 18, 19, 20, 21, 28
 };
 // D13 is reserved: Mega bootloader blinks its LED before setup() can stop motors.
 }  // namespace VendingPins
