@@ -88,3 +88,23 @@ test('cart pages retain five items and clamp after removal', async()=>{
   expect(container.querySelector('.cart-item-name').textContent).toBe('상품 3');
   expect(container.querySelector('.cart-total-amount').textContent).toBe('4개');
 });
+
+test('personalized order and three summary lines survive rendering; details never disable cart',async()=>{
+  getAllVitamins.mockResolvedValue([
+    {id:3,name:'C 상품',category:'비타민 C',stock:5,dispenser_slot:1},
+    {id:8,name:'Mg 상품',category:'마그네슘',stock:5,dispenser_slot:2},
+  ]);
+  const personalization={summary:['상황별 추천 이유','약물 우선 확인','30세 · 175cm · 70kg'],body:['BMI 정보'],related:[
+    {id:8,name:'Mg 상품',reason:'근육·신경 기능',comparison:'식사 포함 섭취기준 비교',notices:[{message:'항생제 복용 간격 확인'}]},
+    {id:3,name:'C 상품',reason:'콜라겐 형성',notices:[]},
+  ],sources:[]};
+  await act(async()=>root.render(<PurchaseScreen onBack={()=>{}} onOrderingChange={()=>{}} onOrderComplete={()=>{}} recommendedCombo={{qrProfile:{name:'테스트'},relatedItems:[8,3],personalization}}/>));
+  expect(container.querySelectorAll('.recommend-brief p')).toHaveLength(3);
+  expect([...container.querySelectorAll('.card-name')].map(el=>el.textContent)).toEqual(['Mg 상품','C 상품']);
+  const details=container.querySelector('details');expect(details.open).toBe(false);
+  await act(async()=>{details.open=true;details.dispatchEvent(new Event('toggle'));});
+  expect(details.textContent).toContain('항생제 복용 간격 확인');
+  expect(container.querySelector('.card-button').disabled).toBe(false);
+  await act(async()=>container.querySelector('.card-button').click());
+  expect(container.querySelector('.cart-item-name').textContent).toBe('Mg 상품');
+});

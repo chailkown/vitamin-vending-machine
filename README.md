@@ -1,4 +1,6 @@
-> 현재 업로드한 Mega의 전체 핀 배치·배선·실물 확인 현황: [ARDUINO_WIRING.md](ARDUINO_WIRING.md) (2026-10-29).
+> **새 노트북 / Codex 시연 세팅은 [DEMO_START_HERE.md](DEMO_START_HERE.md)부터 시작하세요.** 최신 기준 2026-11-11. 자동 준비 스크립트와 Pi 배포·실물 체크리스트가 있습니다. 아래 10월 설명은 이전 기록이며 최신 시작 문서가 우선합니다.
+
+> 현재 업로드한 Mega의 전체 핀 배치·배선·실물 확인 현황: [ARDUINO_WIRING.md](ARDUINO_WIRING.md).
 
 > 2026-10-28 추가: 사용자 요청으로 현재 공개 설정만 담긴 두 `.env`와 소스 백업 6개를 Git에 포함했습니다. 범위와 구분은 [LOCAL_BACKUPS.md](LOCAL_BACKUPS.md)를 참고하세요. 기기 인증키·실행 journal은 포함하지 않습니다.
 

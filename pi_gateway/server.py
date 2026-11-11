@@ -9,6 +9,46 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 class Rejected(Exception): pass
+
+class FanSettingsSync:
+ """One cloud read per 30 seconds; USB work never overlaps dispensing."""
+ def __init__(self,gateway):
+  self.gateway=gateway;self.pending=None;self.applied=None
+  self.stop_event=threading.Event();self.thread=None
+ def fetch(self):
+  data=self.gateway.cloud.rpc('get_device_fan_settings',{})
+  if not isinstance(data,dict) or set(data)!={'temperatureOn','humidityOn'}:
+   raise ValueError('Invalid fan settings')
+  if type(data['temperatureOn']) is not int or not 2<=data['temperatureOn']<=80 or type(data['humidityOn']) is not int or not 5<=data['humidityOn']<=100:
+   raise ValueError('Invalid fan settings')
+  self.pending=data
+ def apply(self):
+  if self.pending is None or self.pending==self.applied:return
+  result=self.gateway.change_fan(self.pending)
+  if not result.get('busy'):
+   self.applied=dict(self.pending)
+   print('쿨러 DB 기준 적용: '+str(self.applied),flush=True)
+ def run(self):
+  next_fetch=0;next_apply=0
+  while not self.stop_event.is_set():
+   now=time.monotonic()
+   if now>=next_fetch:
+    try:self.fetch()
+    except Exception as error:print('쿨러 DB 조회 실패; 기존 기준 유지 ('+type(error).__name__+')',flush=True)
+    next_fetch=time.monotonic()+30
+   if now>=next_apply:
+    try:
+     self.apply();next_apply=time.monotonic()+1
+    except Exception as error:
+     print('쿨러 적용 실패; 재시도 예정 ('+type(error).__name__+')',flush=True)
+     next_apply=time.monotonic()+30
+   self.stop_event.wait(1)
+ def start(self):
+  self.thread=threading.Thread(target=self.run,name='fan-settings-sync',daemon=True);self.thread.start()
+ def stop(self):
+  self.stop_event.set()
+  if self.thread:self.thread.join()
+
 class Cloud:
  def __init__(self,config): self.config=config
  def verify_admin(self, token):
@@ -262,20 +302,7 @@ def handler_for(gateway,static_root,hosts):
    return super().do_GET()
   def do_POST(self):
    if self.path=='/api/environment':
-    if not self.valid() or not self.environment_origin():
-     return self.environment_reply(403,{'message':'허용되지 않은 주소입니다.'})
-    try:
-     size=int(self.headers.get('Content-Length','0'))
-     if not 0<size<=512:raise ValueError('설정 형식을 확인해주세요.')
-     token=self.headers.get('Authorization','').removeprefix('Bearer ')
-     if not gateway.cloud.verify_admin(token):
-      return self.environment_reply(403,{'message':'관리자로 다시 로그인해주세요.'})
-     data=json.loads(self.rfile.read(size))
-     if not isinstance(data,dict):raise ValueError('설정 형식을 확인해주세요.')
-     return self.environment_reply(200,gateway.change_fan(data))
-    except ValueError as error:return self.environment_reply(400,{'message':str(error)})
-    except (OSError,RuntimeError,AttributeError):
-     return self.environment_reply(503,{'message':'팬 설정을 적용하지 못했습니다. Mega 펌웨어와 연결을 확인해주세요.'})
+    return self.environment_reply(405,{'message':'관리자 화면에서 DB에 설정을 저장해주세요.'})
    if not self.valid() or not self.control() or self.headers.get('Origin')!='http://'+self.headers.get('Host',''):return self.reply(403,{'ok':False,'message':'라즈베리파이 화면에서만 배출할 수 있습니다.'})
    if self.path not in ('/api/order','/api/reconcile'):return self.reply(404,{})
    try:
@@ -301,14 +328,17 @@ def main():
   gateway.fan_path=Path(args.config).with_name('fan-settings.json')
   gateway.fan_settings={'temperatureOn':30,'humidityOn':70}
   if gateway.fan_path.exists():
-   settings=json.loads(gateway.fan_path.read_text())
-   motor.configure_fan(settings)
-   gateway.fan_settings=settings
+   try:
+    settings=json.loads(gateway.fan_path.read_text())
+    gateway.change_fan(settings)
+   except (OSError,RuntimeError,ValueError,TypeError):
+    print('저장된 팬 설정 적용 실패; DB에서 다시 확인합니다.',flush=True)
   hosts={f'localhost:{args.port}',f'127.0.0.1:{args.port}',f'raspberrypi.local:{args.port}'}
   server=ThreadingHTTPServer(('0.0.0.0',args.port),handler_for(gateway,root/'kiosk',hosts))
+  fan_sync=FanSettingsSync(gateway);fan_sync.start()
   print('무료 배출 키오스크: http://localhost:'+str(args.port),flush=True)
   print('모터1~20: D3~D21 (11번 D26, 20번 D28) / DHT22: D2 / 팬: D23. 실제 낙하는 수령구에서 확인합니다.',flush=True)
   try:server.serve_forever()
   except KeyboardInterrupt:pass
-  finally:motor.stop();server.server_close()
+  finally:fan_sync.stop();motor.stop();server.server_close()
 if __name__=='__main__':main()

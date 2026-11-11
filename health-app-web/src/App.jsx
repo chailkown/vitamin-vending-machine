@@ -803,7 +803,7 @@ function App() {
               </>
             )}
             {selectedMachine?.id===CONNECTED_MACHINE_ID && adminView==='inventory' && <AdminInventory />}
-            {selectedMachine?.id===CONNECTED_MACHINE_ID && adminView==='environment' && <AdminEnvironment machineName={selectedMachine.name} />}
+            {selectedMachine?.id===CONNECTED_MACHINE_ID && adminView==='environment' && <AdminEnvironment key={selectedMachine.id} machineId={selectedMachine.id} machineName={selectedMachine.name} />}
             <section className="admin-panel" hidden={adminView!=='locationEditor'}>
               <div className="admin-summary">
                 <strong>등록 자판기 {vendingMachines.length}대</strong>

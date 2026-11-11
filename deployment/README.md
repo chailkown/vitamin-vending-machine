@@ -1,3 +1,5 @@
+> 최신 2026-11-11: [새 노트북 시작 안내](../DEMO_START_HERE.md)를 우선합니다. Windows는 `prepare_demo.ps1`로 준비합니다. 기본 배포는 Pi 키오스크 + 노트북 모바일 구성입니다. `install.sh --with-mobile`일 때만 Pi 모바일도 실행합니다. 아래 10월 패키지는 이전 이력입니다.
+
 > 2026-10-28 추가: 사용자 요청으로 현재 공개 설정만 담긴 두 `.env`와 소스 백업 6개를 Git에 포함했습니다. 범위와 구분은 [LOCAL_BACKUPS.md](../LOCAL_BACKUPS.md)를 참고하세요. 기기 인증키·실행 journal은 포함하지 않습니다.
 
 # Pi 배포와 현재 적용 상태

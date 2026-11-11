@@ -19,11 +19,15 @@ def main():
   raise SystemExit('출력은 저장소 루트나 웹 공개 폴더 밖의 전용 패키지 경로를 사용하세요.')
  if output.exists() and any(output.iterdir()):raise SystemExit('기존 파일 혼입 방지를 위해 빈 출력 폴더를 지정하세요.')
  (output/'pi').mkdir(parents=True,exist_ok=True)
- for name in ('server.py','recover.py','set_runtime.py','test_gateway.py','open_kiosk.sh'):
+ for name in ('server.py','recover.py','set_runtime.py','test_gateway.py','open_kiosk.sh','watch_environment.py'):
   shutil.copy2(root/'pi_gateway'/name,output/'pi'/name)
  shutil.copytree(root/'frontend/build',output/'pi/kiosk',dirs_exist_ok=True)
  shutil.copytree(root/'health-app-web/dist',output/'mobile',dirs_exist_ok=True)
  shutil.copy2(root/'deployment/install.sh',output/'install.sh')
+ shutil.copy2(root/'deployment/serve_mobile_lan.py',output/'serve_mobile_lan.py')
+ shutil.copy2(root/'DEMO_NETWORK_2026-11-11.md',output/'DEMO_NETWORK_2026-11-11.md')
+ shutil.copy2(root/'DEMO_START_HERE.md',output/'DEMO_START_HERE.md')
+ shutil.copy2(root/'RECOMMENDATION_PERSONALIZATION_2026-11-11.md',output/'RECOMMENDATION_PERSONALIZATION_2026-11-11.md')
  shutil.copytree(root/'firmware',output/'firmware',ignore=shutil.ignore_patterns('build','tests'))
  shutil.copy2(root/'SOFTWARE_HANDOFF.md',output/'SOFTWARE_HANDOFF.md')
  for name in ('HOME_TEST_2026-10-29.md','REMAINING_WORK_2026-10-29.md','RECOMMENDATION_UPDATE_2026-10-29.md'):

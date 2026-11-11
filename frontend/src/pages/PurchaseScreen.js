@@ -23,7 +23,7 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
   const refreshInventory = useRef(() => {});
   const relatedProducts = useMemo(() => {
     const ids = recommendedCombo?.relatedItems || recommendedCombo?.items || [];
-    return vitamins.filter(product => ids.includes(product.id));
+    return ids.map(id => vitamins.find(product => product.id === id)).filter(Boolean);
   }, [vitamins, recommendedCombo]);
   const products = activeCategory === '추천'
     ? (relatedProducts.length ? relatedProducts : vitamins)
@@ -166,12 +166,32 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
               <h3>{recommendedCombo.qrProfile?.name
                 ? `${recommendedCombo.qrProfile.name}님 추천내역입니다`
                 : '추천내역입니다'}</h3>
-              <p className="recommend-brief">{relatedProducts.length
+              {recommendedCombo.personalization ? <div className="recommend-brief">
+                {recommendedCombo.personalization.summary.map(line => <p key={line}>{line}</p>)}
+              </div> : <p className="recommend-brief">{relatedProducts.length
                 ? '선택한 상황과 관련된 영양제입니다.'
-                : '전체 영양제를 둘러보고 원하는 상품을 선택하세요.'}</p>
-              {recommendedCombo.guidance && (
-                <details>
-                  <summary>섭취 안내</summary>
+                : '전체 영양제를 둘러보고 원하는 상품을 선택하세요.'}</p>}
+              {recommendedCombo.personalization ? (
+                <details className="recommend-details">
+                  <summary>추천 이유와 주의사항 펼치기</summary>
+                  <div className="recommend-details-body">
+                    <p>선택한 상황의 관련 상품 안에서 알레르기, 복용 약물, 기저질환 순으로 주의사항을 비교했습니다. 같은 성분은 함량 비교가 가능할 때 낮은 함량을 먼저 표시하며, 적합한 개인 복용량을 정한 것은 아닙니다.</p>
+                    {recommendedCombo.personalization.body.map(line => <p key={line}>{line}</p>)}
+                    {recommendedCombo.personalization.related.map(item => (
+                      <section key={item.id} className="recommend-nutrient-item">
+                        <strong>{item.name}</strong>
+                        <p>{item.reason}</p>
+                        {item.comparison && <p>{item.comparison}</p>}
+                        {item.notices.map((notice,index) => <p className="recommend-precaution" key={index}>{notice.message}</p>)}
+                      </section>
+                    ))}
+                    <p>선택 정보에 없는 병력·약물이나 확인되지 않은 제품 원료는 평가할 수 없습니다. 주의사항은 섭취 전 확인용이며 구매 버튼을 제한하지 않습니다.</p>
+                    <div className="recommend-sources">{recommendedCombo.personalization.sources.map(source => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.title}</a>)}</div>
+                  </div>
+                </details>
+              ) : recommendedCombo.guidance && (
+                <details className="recommend-details">
+                  <summary>추천 이유와 주의사항 펼치기</summary>
                   <p>{recommendedCombo.guidance}</p>
                   {(recommendedCombo.warnings || []).map(warning => <p key={warning}>{warning}</p>)}
                   {(recommendedCombo.productExclusions || []).map(product => (

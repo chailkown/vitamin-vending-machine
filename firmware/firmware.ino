@@ -91,8 +91,8 @@ void loop() {
     sampled = millis(); temperature = sensor.readTemperature(); humidity = sensor.readHumidity();
     sensorValid = !isnan(temperature) && !isnan(humidity);
     if (!sensorValid) fan(true);
-    else if (temperature >= fanTempOn || humidity >= fanHumidityOn) fan(true);
-    else if (temperature <= fanTempOn - (FAN_TEMP_ON - FAN_TEMP_OFF) &&
+    else if (temperature >= fanTempOn && humidity >= fanHumidityOn) fan(true);
+    else if (temperature <= fanTempOn - (FAN_TEMP_ON - FAN_TEMP_OFF) ||
              humidity <= fanHumidityOn - (FAN_HUMIDITY_ON - FAN_HUMIDITY_OFF)) fan(false);
   }
 }

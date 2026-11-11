@@ -43,6 +43,12 @@
 .purchase-screen .recommend-details summary{cursor:pointer;color:#4338ca;font-weight:700;padding:6px 0}
 .purchase-screen .recommend-details[open]{max-height:220px;overflow:auto}
 .purchase-screen .recommend-details-body{font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.purchase-screen .recommend-details summary{min-height:44px;display:flex;align-items:center;gap:8px;touch-action:manipulation}
+.purchase-screen .recommend-details summary::before{content:'▾'}
+.purchase-screen .recommend-details[open] summary::before{content:'▴'}
+.purchase-screen .recommend-details[open]{max-height:none;overflow:visible}
+.purchase-screen .recommend-sources{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.purchase-screen .recommend-sources a{padding:8px;border-radius:6px;background:#fff;color:#4338ca}
 .purchase-screen .recommend-nutrient-item{margin:8px 0}
 .purchase-screen .recommend-nutrient-item strong{display:block}
 .purchase-screen .recommend-excluded,.purchase-screen .recommend-precaution{font-size:12px;color:#9a3412}

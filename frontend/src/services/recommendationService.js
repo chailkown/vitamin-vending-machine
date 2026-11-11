@@ -3,6 +3,7 @@ import { EVIDENCE } from '../data/recommendationEvidence';
 import { SYMPTOM_REVIEW, NUTRITION_CATEGORY } from '../data/recommendationPolicy';
 import { getAllVitamins } from './vitaminService';
 import { getQrProfileRules, assessRecommendedProducts } from './recommendationSafety';
+import { personalizeRecommendations } from './personalizedRecommendation';
 export { parseQrPayload } from './qrPayload';
 export { getQrProfileRules } from './recommendationSafety';
 
@@ -36,6 +37,7 @@ export const getRecommendationResult = async (symptomCode, qrProfile = null) => 
   const qrRules = qrProfile ? getQrProfileRules(qrProfile) : null;
   const candidates = all.filter((p) => meta.nutrients.includes(p.category));
   const result = assessRecommendedProducts(candidates, qrProfile, qrRules);
+  const personalization = personalizeRecommendations(all, meta.nutrients, qrProfile);
   const accepted = meta.hold ? [] : result.accepted;
   const exclusions = candidates.map((product) => {
     const restriction = result.excluded.find((item) => item.id === product.id);
@@ -45,7 +47,8 @@ export const getRecommendationResult = async (symptomCode, qrProfile = null) => 
   return {
     ...meta, items: accepted.map((p) => p.id), products: accepted,
     nutrients: [...new Set(accepted.map((p) => p.category))],
-    relatedItems: candidates.map((p) => p.id),
+    relatedItems: personalization.related.map((p) => p.id),
+    personalization,
     relatedNutrients: meta.nutrients,
     qrProfile, qrRules, productExclusions: exclusions,
     sources: sources.filter((source, i) => sources.findIndex((s) => s.url === source.url) === i),

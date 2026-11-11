@@ -1,6 +1,7 @@
 // Evidence describes population-level findings, not a clinical prescription.
 // Application holds/exclusions are conservative kiosk policies, not universal contraindications.
 export const EVIDENCE = {
+  body: { title: 'CDC · 성인 BMI는 선별 지표', url: 'https://www.cdc.gov/bmi/adult-calculator/' },
   general: { title: 'NCCIH · 보충제 사용 시 고려사항', url: 'https://www.nccih.nih.gov/health/using-dietary-supplements-wisely/' },
   magnesium: { title: 'NIH ODS · 마그네슘', url: 'https://ods.od.nih.gov/factsheets/Magnesium-HealthProfessional/' },
   zinc: { title: 'NIH ODS · 아연', url: 'https://ods.od.nih.gov/factsheets/Zinc-HealthProfessional/' },

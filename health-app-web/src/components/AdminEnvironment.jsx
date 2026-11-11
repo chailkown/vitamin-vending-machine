@@ -1,10 +1,7 @@
 import { useEffect, useState } from 'react';
-import { updateFanThresholds } from '../services/adminService';
+import { getFanThresholds, updateFanThresholds } from '../services/adminService';
 
-const endpoint = new URL('/api/environment', window.location.href);
-if (!document.querySelector('meta[name="vitamin-env-proxy"]')) endpoint.port = '3000';
-
-export default function AdminEnvironment({ machineName }) {
+export default function AdminEnvironment({ machineId, machineName }) {
   const [values, setValues] = useState(null);
   const [saved, setSaved] = useState(null);
   const [attempt, setAttempt] = useState(0);
@@ -13,25 +10,20 @@ export default function AdminEnvironment({ machineName }) {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const controller = new AbortController();
+    let live = true;
     const load = async () => {
       try {
-        const response = await fetch(endpoint, {
-          cache: 'no-store',
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]),
-        });
-        const data = await response.json();
-        if (!response.ok || !data.thresholds) throw new Error('기준값을 불러오지 못했어요.');
-        if (controller.signal.aborted) return;
-        setSaved(data.thresholds);
-        setValues(data.thresholds);
+        const thresholds = await getFanThresholds(machineId);
+        if (!live) return;
+        setSaved(thresholds);
+        setValues(thresholds);
       } catch {
-        if (!controller.signal.aborted) setError('기준값을 불러오지 못했어요. 기기 연결을 확인하고 다시 시도해 주세요.');
+        if (live) setError('기준값을 불러오지 못했어요. 네트워크를 확인하고 다시 시도해주세요.');
       }
     };
     load();
-    return () => controller.abort();
-  }, [attempt]);
+    return () => { live = false; };
+  }, [attempt, machineId]);
 
   const save = async (event) => {
     event.preventDefault();
@@ -39,13 +31,13 @@ export default function AdminEnvironment({ machineName }) {
     setMessage('');
     setError('');
     try {
-      const thresholds = await updateFanThresholds(endpoint, {
+      const thresholds = await updateFanThresholds(machineId, {
         temperatureOn: Number(values.temperatureOn),
         humidityOn: Number(values.humidityOn),
       });
       setSaved(thresholds);
       setValues(thresholds);
-      setMessage('쿨러 기준값을 저장했어요.');
+      setMessage('저장되었습니다.');
     } catch (error) {
       setError(error.message);
     } finally {
@@ -77,7 +69,7 @@ export default function AdminEnvironment({ machineName }) {
                 onChange={event => setValues({ ...values, humidityOn: event.target.value })} /><b aria-hidden="true">%</b></span>
             </label>
           </div>
-          <p className="cooler-note">두 기준을 모두 넘을 때만 켜는 조건은 기기 펌웨어 업데이트 후 적용돼요. 현재는 한 기준에 도달하면 켜집니다.</p>
+          <p className="cooler-note">온도와 습도가 모두 기준 이상이면 켜집니다. 켜진 뒤 온도가 기준보다 2°C 내려가거나 습도가 5%p 내려가면 꺼집니다.</p>
           <button className="cooler-save" type="submit" disabled={saving || !dirty}>{saving ? '저장 중…' : '기준값 저장'}</button>
         </form>
       ) : error ? (

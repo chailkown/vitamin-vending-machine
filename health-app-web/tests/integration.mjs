@@ -87,9 +87,9 @@ test('Korean QR PNG round-trips through independent jsQR decoder', async () => {
   assert.equal(result?.data,text);
   await assert.rejects(createQrDataUrl('한'.repeat(1000)),/너무 큽니다/);
 });
-const recommendationFiles = ['frontend/src/data/productPolicy.js','frontend/src/data/nutrientInformation.js','frontend/src/data/recommendationEvidence.js','frontend/src/data/recommendationPolicy.js','frontend/src/data/algorithmData.js','frontend/src/data/sampleVitamins.js','frontend/src/services/vitaminService.js','frontend/src/services/recommendationSafety.js','frontend/src/services/recommendationService.js'];
+const recommendationFiles = ['frontend/src/data/productPolicy.js','frontend/src/data/nutrientInformation.js','frontend/src/data/recommendationEvidence.js','frontend/src/data/recommendationPolicy.js','frontend/src/data/algorithmData.js','frontend/src/data/sampleVitamins.js','frontend/src/services/vitaminService.js','frontend/src/services/recommendationSafety.js','frontend/src/services/personalizedRecommendation.js','frontend/src/services/recommendationService.js'];
 const recommendationContext = (extras={}) => {
-  const ctx = vm.createContext({process:{env:{}},supabase:null,isSupabaseConfigured:false,...extras});
+  const ctx = vm.createContext({process:{env:{}},supabase:null,isSupabaseConfigured:false,healthCatalog,...extras});
   for (const path of recommendationFiles) vm.runInContext(strip(read(path)),ctx);
   return ctx;
 };
