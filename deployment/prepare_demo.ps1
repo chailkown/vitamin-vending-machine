@@ -1,6 +1,8 @@
 param(
     [switch]$CheckOnly,
     [switch]$SkipInstall,
+    [switch]$StartMobile,
+    [ValidateRange(1,65535)][int]$MobilePort = 3001,
     [string]$PythonExecutable
 )
 $ErrorActionPreference = 'Stop'
@@ -70,7 +72,34 @@ try {
     $dirty=([string](& git status --porcelain)).Length -gt 0
     @("commit=$commit", "working_tree_changes=$dirty", "prepared_at=$(Get-Date -Format o)", 'hardware_tested=false') | Set-Content -Encoding UTF8 (Join-Path $output 'BUILD_INFO.txt')
     Write-Host "Prepared bundle: $output"
+    if ($StartMobile) {
+        $stdout = Join-Path (Split-Path $output -Parent) "mobile-$stamp.stdout.log"
+        $stderr = Join-Path (Split-Path $output -Parent) "mobile-$stamp.stderr.log"
+        $arguments = $pythonPrefix + @('deployment/serve_mobile_lan.py', '--directory', 'health-app-web/dist', '--port', "$MobilePort")
+        $server = Start-Process -FilePath (Get-Command $python).Source -ArgumentList $arguments -WorkingDirectory $repo -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+        $verified = $false
+        try {
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+                $server.Refresh()
+                if ($server.HasExited) { throw "Mobile server could not start. See $stderr" }
+                if ((Get-Content -LiteralPath $stdout -Raw) -like "Mobile web port $MobilePort;*") {
+                    $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$MobilePort/" -TimeoutSec 3
+                    if ($response.StatusCode -ne 200) { throw 'Mobile web did not return HTTP 200.' }
+                    $verified = $true
+                    break
+                }
+                Start-Sleep -Milliseconds 200
+            }
+            if (!$verified) { throw "Mobile startup timed out. See $stderr" }
+        } finally {
+            if (!$verified -and !$server.HasExited) { Stop-Process -Id $server.Id }
+        }
+        Write-Host "Mobile server PID $($server.Id) | HTTP 200 | $stdout"
+        Write-Host "Phone URL: http://<laptop Wi-Fi IPv4>:$MobilePort/ (find IPv4 with ipconfig)"
+    }
     Write-Host 'No hardware was contacted. Preserve the existing Pi device.json and calibrated motor timings.'
-    Write-Host 'Start mobile: python deployment/serve_mobile_lan.py --directory health-app-web/dist --port 3001 (or py -3).'
+    if (!$StartMobile) {
+        Write-Host 'Start mobile: python deployment/serve_mobile_lan.py --directory health-app-web/dist --port 3001 (or py -3).'
+    }
     Write-Host 'Next: follow DEMO_START_HERE.md for Pi upload and the physical checklist.'
 } finally { Pop-Location }

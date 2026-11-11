@@ -186,7 +186,6 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
                       </section>
                     ))}
                     <p>선택 정보에 없는 병력·약물이나 확인되지 않은 제품 원료는 평가할 수 없습니다. 주의사항은 섭취 전 확인용이며 구매 버튼을 제한하지 않습니다.</p>
-                    <div className="recommend-sources">{recommendedCombo.personalization.sources.map(source => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.title}</a>)}</div>
                   </div>
                 </details>
               ) : recommendedCombo.guidance && (
@@ -212,9 +211,6 @@ export default function PurchaseScreen({ onBack, recommendedCombo, onOrderComple
                   />
                 </div>
                 <div className="card-name">{product.name}</div>
-                {product.stock != null && product.stock <= 10 && (
-                  <div className="card-stock">재고 {product.stock}개</div>
-                )}
                 <button
                   className="card-button"
                   onClick={() => addToCart(product)}

@@ -6,6 +6,8 @@ if [[ "${1:-}" == '--with-mobile' && $# == 1 ]]; then with_mobile=1
 elif [[ $# != 0 ]]; then echo 'Usage: bash install.sh [--with-mobile]'; exit 1; fi
 bundle="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 runtime="$HOME/.local/share/vitamin-vending"
+existing_runtime=0
+if test -d "$runtime"; then existing_runtime=1; fi
 python3 -c 'import serial' || { echo '먼저 sudo apt install -y python3-serial 를 실행하세요.'; exit 1; }
 if ! test -f "$runtime/pi/device.json" && ! test -f "$bundle/pi/device.json"; then
  echo '기존 Pi device.json이 없습니다. 기기 인증 설정을 먼저 준비해주세요.'; exit 1
@@ -44,7 +46,8 @@ for slot in range(1,21):durations.setdefault(str(slot),500)
 if any(type(v) is not int or not 100<=v<=5000 for v in durations.values()):raise SystemExit('모터 시간 설정 오류')
 temp=path.with_suffix('.json.tmp');temp.write_text(json.dumps(config,indent=2));temp.chmod(0o600);os.replace(temp,path)
 PY
-for file in server.py recover.py test_gateway.py open_kiosk.sh set_runtime.py watch_environment.py; do cp "$bundle/pi/$file" "$runtime/pi/$file"; done
+for file in server.py recover.py test_gateway.py set_runtime.py watch_environment.py; do cp "$bundle/pi/$file" "$runtime/pi/$file"; done
+if ! test -f "$runtime/pi/open_kiosk.sh"; then cp "$bundle/pi/open_kiosk.sh" "$runtime/pi/open_kiosk.sh"; fi
 cp -R "$bundle/pi/kiosk/." "$runtime/pi/kiosk/"
 cp -R "$bundle/mobile/." "$runtime/mobile/"
 cat > "$HOME/.config/systemd/user/vitamin-kiosk.service" <<EOF
@@ -69,15 +72,16 @@ RestartSec=5
 [Install]
 WantedBy=default.target
 EOF
-mkdir -p "$HOME/.config/autostart"
-if test -f "$HOME/.config/autostart/vitamin-kiosk.desktop"; then cp -p "$HOME/.config/autostart/vitamin-kiosk.desktop" "$HOME/.config/autostart/vitamin-kiosk.desktop.backup-$(date +%s)"; fi
-cat > "$HOME/.config/autostart/vitamin-kiosk.desktop" <<EOF
+if [[ "$existing_runtime" == 0 ]] && ! test -f "$HOME/.config/autostart/vitamin-kiosk.desktop"; then
+ mkdir -p "$HOME/.config/autostart"
+ cat > "$HOME/.config/autostart/vitamin-kiosk.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Vitamin free kiosk
 Exec=/bin/bash $runtime/pi/open_kiosk.sh
 X-GNOME-Autostart-enabled=true
 EOF
+fi
 systemctl --user daemon-reload
 systemctl --user enable --now vitamin-kiosk
 if [[ "$with_mobile" == 1 ]]; then systemctl --user enable --now vitamin-mobile

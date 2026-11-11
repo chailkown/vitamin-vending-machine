@@ -31,12 +31,14 @@ Git, Node.js 22.12 이상 LTS, Python 3.10 이상을 준비한다. 도구가 없
 ```powershell
 git clone https://github.com/chailkown/vitamin-vending-machine.git
 cd vitamin-vending-machine
-powershell -NoProfile -ExecutionPolicy Bypass -File deployment/prepare_demo.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File deployment/prepare_demo.ps1 -StartMobile
 ```
 
 이미 저장소가 있으면 새로 복제하거나 덮어쓰지 말고 `git status` 확인 → 변경 보존 → `git pull --ff-only` 순으로 진행한다. 충돌이나 로컬 변경은 보존해서 해결한다.
 
 준비 스크립트는 공개 환경변수 검사, lockfile 기반 npm 설치, 두 웹 빌드, 모바일 lint/통합 테스트, React 테스트, Python 가상 장치 테스트, `.deploy/demo-날짜-시간` 묶음 생성을 수행한다. 실제 Pi에 접속하거나 모터를 돌리지 않는다.
+
+`-StartMobile`을 사용하면 빌드가 끝난 뒤 모바일 서버를 3001번 포트에서 시작하고 HTTP 응답, 프로세스 번호와 로그 경로를 표시한다. 현장 Wi-Fi에 연결한 뒤 `ipconfig`에서 노트북 IPv4를 확인한다.
 
 - 도구/공개 설정 검사만: `... -File deployment/prepare_demo.ps1 -CheckOnly`
 - 이미 설치된 의존성 재사용: `... -File deployment/prepare_demo.ps1 -SkipInstall`
@@ -45,7 +47,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File deployment/prepare_demo.ps1
 
 ## 2. 노트북 모바일 서버
 
-저장소 루트에서 실행:
+준비 스크립트에서 `-StartMobile`을 생략했거나 서버를 다시 띄울 때 저장소 루트에서 실행한다.
 
 ```powershell
 py -3 deployment/serve_mobile_lan.py --directory health-app-web/dist --port 3001
@@ -60,6 +62,8 @@ New-NetFirewallRule -DisplayName 'Vitamin mobile demo 3001' -Direction Inbound -
 ```
 
 이미 동일 규칙이 있으면 중복 생성하지 않는다. 카카오 지도는 JavaScript 키와 현재 웹 접속 주소의 허용 도메인을 별도 확인한다. 카카오 Admin 키를 브라우저에 넣지 않는다. 지도 설정이 없어도 QR·회원·재고 테스트와 구분해서 보고한다.
+
+카카오 지도를 사용할 경우, 준비 스크립트를 실행하기 전 같은 PowerShell에서 `$env:VITE_KAKAO_MAP_KEY = '카카오 JavaScript 키'`를 설정한다. 카카오 개발자 콘솔의 JavaScript SDK 도메인에 실제 휴대폰 접속 주소 `http://노트북IPv4:3001`을 등록한다.
 
 ## 3. Pi 연결·백업·업데이트
 
@@ -98,7 +102,7 @@ bash ~/.local/share/vitamin-vending/pi/open_kiosk.sh
 
 설치 스크립트는 기존 런타임을 비공개 tar 백업하고 기존 `device.json`, `fan-settings.json`, journal 및 모터 시간을 보존한다. 누락된 슬롯 시간만 기존 정책대로 500ms를 채우므로 교정 누락은 실물 시험 전에 확인한다. 기본값은 Pi 키오스크만 실행하며 이전 Pi 모바일 서비스는 끈다. 모바일까지 Pi에서 제공할 때만 `install.sh --with-mobile`을 명시한다.
 
-현재 브라우저 실행기는 Raspberry Pi OS Wayland + Chromium 기준이다. SSH로 브라우저가 안 뜨면 그래픽 로그인 세션·Wayland 소켓·Chromium 설치를 확인한다. X11이라면 환경에 맞는 실행 명령을 사용하고 화면이 실제로 보이는지 사용자에게 확인한다. 자동 로그인 설정 자체는 이 스크립트가 바꾸지 않는다.
+기존 Pi에서는 설치 스크립트가 현재 브라우저 실행기와 자동 시작 설정을 보존한다. 새 Pi에 포함된 기본 실행기는 Raspberry Pi OS Wayland + Chromium 기준이다. 화면이 뜨지 않으면 그래픽 로그인 세션과 Wayland 소켓을 확인한다.
 
 기기 인증이 없으면 예제 JSON을 복사해 성공으로 처리하지 않는다. 기존 Pi/비공개 백업에서 복구하거나 별도 등록이 필요하다. 인증값·journal·백업 묶음은 공개 Git에 올리지 않는다.
 
