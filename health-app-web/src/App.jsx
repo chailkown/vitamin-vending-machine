@@ -113,7 +113,7 @@ const toNumberText = (value) => String(value ?? '').replace(/\D/g, '');
 
 const loadKakaoMapSdk = () => new Promise((resolve, reject) => {
   if (!KAKAO_MAP_KEY) {
-    reject(new Error('지도를 준비하고 있습니다.'));
+    reject(new Error('지도 연결 설정을 확인해주세요.'));
     return;
   }
 
@@ -637,7 +637,7 @@ function App() {
 
   return (
     <main className="app-bg">
-      <div className="phone-frame">
+      <div className={activeScreen==='admin' ? 'phone-frame admin-frame' : 'phone-frame'}>
         {activeScreen === 'auth' && (
           <section className="auth-screen">
             <div className="auth-brand">
@@ -804,22 +804,24 @@ function App() {
             )}
             {selectedMachine?.id===CONNECTED_MACHINE_ID && adminView==='inventory' && <AdminInventory />}
             {selectedMachine?.id===CONNECTED_MACHINE_ID && adminView==='environment' && <AdminEnvironment key={selectedMachine.id} machineId={selectedMachine.id} machineName={selectedMachine.name} />}
-            <section className="admin-panel" hidden={adminView!=='locationEditor'}>
+            <section className="admin-panel location-editor" hidden={adminView!=='locationEditor'}>
               <div className="admin-summary">
                 <strong>등록 자판기 {vendingMachines.length}대</strong>
                 <button type="button" onClick={logout}>로그아웃</button>
               </div>
-              <div className="admin-form">
-                <input
+              <div className="location-layout">
+              <div className="admin-form location-form">
+                <h2>{machineForm.id ? '자판기 위치 수정' : '자판기 등록'}</h2>
+                <label>자판기 이름<input
                   value={machineForm.name}
                   onChange={(event) => setMachineForm((prev) => ({ ...prev, name: event.target.value }))}
                   placeholder="자판기 이름"
-                />
-                <input
+                /></label>
+                <label>주소<input
                   value={machineForm.address}
                   onChange={(event) => setMachineForm((prev) => ({ ...prev, address: event.target.value }))}
                   placeholder="지도에서 위치를 선택하세요"
-                />
+                /></label>
                 <div className="admin-map-picker-wrap">
                   <div id="admin-location-map" className="admin-location-map" />
                   <small>
@@ -828,14 +830,14 @@ function App() {
                       : '지도에서 자판기 위치를 눌러주세요'}
                   </small>
                 </div>
-                <select
+                <label>운영 상태<select
                   value={machineForm.status}
                   onChange={(event) => setMachineForm((prev) => ({ ...prev, status: event.target.value }))}
                 >
                   <option value="운영중">운영중</option>
                   <option value="점검중">점검중</option>
                   <option value="중지">중지</option>
-                </select>
+                </select></label>
                 <div className="admin-actions">
                   <button type="button" disabled={machineBusy} onClick={submitMachine}>
                     {machineForm.id ? '수정' : '등록'}
@@ -848,7 +850,7 @@ function App() {
                 {machineNotice && <p className="db-notice">{machineNotice}</p>}
               </div>
 
-              <div className="machine-admin-list">
+              <div className="machine-admin-list location-list">
                 {vendingMachines.map((machine) => (
                   <article key={machine.id} className="machine-admin-card">
                     <div>
@@ -862,6 +864,7 @@ function App() {
                     </div>
                   </article>
                 ))}
+              </div>
               </div>
             </section>
           </>
