@@ -88,7 +88,36 @@ test('unknown labels, mixed compounds and probiotic CFUs are not invented dose c
 
 test('no QR and disabled categories keep original situation membership',()=>{
   const result=personalizeRecommendations(SAMPLE_VITAMINS,['비타민 C'],null);
-  expect(result.related.map(p=>p.id)).toEqual([3,4]);
+  expect(result.related.map(p=>p.id)).toEqual([4,3]);
   expect(result.summary.join(' ')).toContain('QR 없이');
   expect(result.assessments).toHaveLength(20);
+});
+
+test.each([
+  ['비타민 B-Complex',[1,2],'B6 25mg'],
+  ['비타민 C',[4,3],'500mg'],
+  ['비타민 D3',[6,5],'1000IU'],
+  ['마그네슘',[8,7],'200mg'],
+  ['오메가-3',[10,9],'EPA+DHA 300mg'],
+  ['루테인/제아잔틴',[13,14],'루테인 10mg'],
+  ['아연',[17,19],'15mg'],
+  ['베타글루칸',[23,24],'100mg'],
+])('%s compares actual labeled amounts with and without QR',(category,ids,basis)=>{
+  for (const input of [null,profile]) {
+    const result=personalizeRecommendations([...products].reverse(),[category],input);
+    expect(result.related.map(p=>p.id)).toEqual(ids);
+    expect(result.related[0].doseLabel).toContain(basis);
+    expect(result.related[0].doseLabel).toContain('낮은 함량');
+    expect(result.related[1].doseLabel).toContain('높은 함량');
+  }
+  expect(labeledAmount({category:'비타민 C',serving_content:'1,000 mg'})).toBe(1000);
+});
+
+test('allergen priority outranks lower amount without excluding either product',()=>{
+  const rows=products.filter(p=>p.category==='비타민 C').map(p=>({...p,
+    allergen_verified:true,allergen_codes:p.id===4?[2]:[],
+    allergen_source_url:'https://example.org/label',allergen_checked_at:'2026-11-24'}));
+  const result=personalizeRecommendations(rows,['비타민 C'],{...profile,allergyCodes:[2]});
+  expect(result.related.map(p=>p.id)).toEqual([3,4]);
+  expect(result.summary[1]).toContain('알레르기');
 });

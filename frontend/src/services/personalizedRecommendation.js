@@ -42,10 +42,23 @@ export function bodyContext(profile) {
   return { lines, bmi, reference };
 }
 
-// Read only explicit single-nutrient labels. Never infer quantities from brand names or images.
+// Compare explicit label amounts, never brand names or presumed personal doses.
 export function labeledAmount(product) {
-  const text = String(product.serving_content || '');
-  if (![C.c,C.d,C.mg,C.z].includes(product.category)) return null;
+  const text = String(product.serving_content || '').replace(/(\d),(?=\d{3}\b)/g, '$1');
+  if (product.category === C.b) {
+    const match = text.match(/\bB6(?:\([^)]*\))?\s*(\d+(?:\.\d+)?)\s*mg\b/i);
+    return match && Number(match[1]) > 0 ? Number(match[1]) : null;
+  }
+  if (product.category === C.o) {
+    const epa = text.match(/\bEPA\s*(\d+(?:\.\d+)?)\s*mg\b/i);
+    const dha = text.match(/\bDHA\s*(\d+(?:\.\d+)?)\s*mg\b/i);
+    return epa && dha && Number(epa[1]) + Number(dha[1]) > 0 ? Number(epa[1]) + Number(dha[1]) : null;
+  }
+  if (product.category === C.l) {
+    const match = text.match(/루테인\s*(\d+(?:\.\d+)?)\s*mg\b/i);
+    return match && Number(match[1]) > 0 ? Number(match[1]) : null;
+  }
+  if (![C.c,C.d,C.mg,C.z,C.q,C.beta].includes(product.category)) return null;
   const matches = [...text.matchAll(/(\d+(?:\.\d+)?)\s*(mcg|μg|µg|mg|IU)\b/gi)];
   if (matches.length !== 1) return null;
   const amount = Number(matches[0][1]), unit = matches[0][2].toLowerCase();
@@ -128,8 +141,15 @@ export function personalizeRecommendations(products, situationNutrients, profile
     // Do not compare mg across nutrients or CFUs across probiotic strains.
     const categoryOrder = situationNutrients.indexOf(a.category)-situationNutrients.indexOf(b.category);
     if (categoryOrder) return categoryOrder;
-    if (a.referenceRatio !== null && b.referenceRatio !== null) return a.referenceRatio-b.referenceRatio;
+    if (a.amount !== null && b.amount !== null) return a.amount-b.amount;
     return 0;
+  });
+  related.forEach(item => {
+    const amounts = related.filter(other => other.category === item.category && other.amount !== null).map(other => other.amount);
+    const basis = item.category === C.b ? 'B6 ' : item.category === C.o ? 'EPA+DHA ' : item.category === C.l ? '루테인 ' : '';
+    const unit = item.category === C.d ? 'IU' : 'mg';
+    item.doseLabel = item.amount === null ? null
+      : `${basis}${item.amount}${unit}${Math.min(...amounts) < Math.max(...amounts) ? (item.amount === Math.min(...amounts) ? ' · 비교 상품 중 낮은 함량' : ' · 비교 상품 중 높은 함량') : ''}`;
   });
   const concerns = related.flatMap(item => item.notices.filter(notice => notice.message));
   const labels = profile ? [
